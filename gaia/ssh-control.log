@@ -1,0 +1,51 @@
+[2026-03-05T20:40:12.511Z]
+  node:    zeus (100.78.126.27)
+  command: echo gaia-test
+  reason:  connectivity test
+  status:  FAILED
+  result:  ERROR: Command failed: ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -o LogLevel=ERROR 100.78.126.27 echo gaia-test
+zeus@100.78.126.27: Permission denied (publickey,password,keyboard-interactive).
+
+zeus@100.78.126.27: Permission denied (publickey,password,keyboard-interactive).
+
+[2026-03-05T20:42:36.878Z]
+  node:    zeus (100.78.126.27)
+  command: echo zeus-ok
+  reason:  connectivity test
+  status:  FAILED
+  result:  ERROR: Command failed: ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -o LogLevel=ERROR gaia@100.74.201.75 ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -o LogLevel=ERROR 100.78.126.27 echo zeus-ok
+gaia@100.74.201.75: Permission denied (publickey,password,keyboard-interactive).
+
+gaia@100.74.201.75: Permission denied (publickey,password,keyboard-interactive).
+
+[2026-03-05T20:52:09.027Z]
+  node:    zeus (100.78.126.27)
+  command: echo zeus-ok
+  reason:  connectivity test
+  status:  FAILED
+  result:  ERROR: Command failed: ssh -i /Users/gaia/.ssh/id_ed25519 -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes -o LogLevel=ERROR 100.78.126.27 echo zeus-ok
+gaia@100.78.126.27: Permission denied (publickey,password,keyboard-interactive).
+
+gaia@100.78.126.27: Permission denied (publickey,password,keyboard-interactive).
+
+[2026-03-05T20:55:58.632Z]
+  node:    zeus (100.78.126.27)
+  command: echo zeus-ok
+  reason:  connectivity test
+  status:  OK
+  result:  zeus-ok
+
+[2026-03-05T20:56:25.514Z]
+  node:    poseidon (100.114.203.41)
+  command: echo poseidon-ok
+  reason:  connectivity test
+  status:  OK
+  result:  poseidon-ok
+
+[2026-03-05T20:56:25.733Z]
+  node:    hades (100.68.217.82)
+  command: echo hades-ok
+  reason:  connectivity test
+  status:  OK
+  result:  hades-ok
+

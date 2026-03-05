@@ -1,0 +1,241 @@
+/**
+ * telegram.js — Mount Olympus Telegram bot integration
+ *
+ * Three bots mirror the dashboard routing:
+ *   Zeus bot     → full B3C (tier-classified) or ZEUS PROTOCOL direct
+ *                  Also handles War Room group chat (B3C, reply to group)
+ *   Poseidon bot → direct Poseidon
+ *   Hades bot    → direct Hades
+ *
+ * Gaia's Telegram is managed exclusively by her own OpenClaw gateway.
+ * Only messages from approved user IDs are processed.
+ *
+ * Reply routing has two paths (tried in order):
+ *   1. Pending map  — exact chatId + bot stored when the message arrived
+ *   2. Channel name — parsed from the channel string on request_complete,
+ *                     handles restarts and API-initiated Telegram missions
+ */
+
+import TelegramBot from 'node-telegram-bot-api';
+import { subscribe } from './olympus-ws.js';
+
+// ── Approved senders ──────────────────────────────────────────────────────────
+const APPROVED_USERS = new Map([
+  [8150818650, 'Carson'],
+  [874345067,  'Tyler'],
+]);
+
+// Telegram DM chatId equals userId for private chats
+const USER_CHAT_IDS = new Map([
+  ['carson', 8150818650],
+  ['tyler',  874345067],
+]);
+
+// ── Bot configuration ─────────────────────────────────────────────────────────
+const BOT_CONFIGS = [
+  { name: 'zeus',     tokenEnv: 'TELEGRAM_BOT_TOKEN', target: 'zeus'     },
+  { name: 'poseidon', tokenEnv: 'POSEIDON_BOT_TOKEN', target: 'poseidon' },
+  { name: 'hades',    tokenEnv: 'HADES_BOT_TOKEN',    target: 'hades'    },
+];
+
+// ── Active bot instances (name → bot) ─────────────────────────────────────────
+const activeBots = new Map();
+
+// ── Pending reply map: requestId → { chatId, bot } ───────────────────────────
+// Populated by the bot message handler as soon as /request returns an id.
+// Primary return path — has the exact chatId from the incoming Telegram message.
+const pending = new Map();
+
+// ── Send a message (Markdown → plain text fallback) ───────────────────────────
+function sendReply(bot, chatId, text) {
+  bot.sendMessage(chatId, text, { parse_mode: 'Markdown' })
+    .catch(() =>
+      bot.sendMessage(chatId, text)
+        .catch(e => console.error('[Telegram] Failed to send reply:', e.message))
+    );
+}
+
+// ── Resolve delivery destination from channel string ─────────────────────────
+// Channel formats:
+//   "Telegram · Carson"   → DM to Carson (chatId = 8150818650)
+//   "Telegram · Tyler"    → DM to Tyler  (chatId = 874345067)
+//   "War Room · Carson"   → War Room group chat
+//   "War Room · Tyler"    → War Room group chat
+//   "dashboard"           → no Telegram delivery
+// directTarget (from event.direct) selects the bot for agent-targeted missions.
+function resolveDestination(channel, directTarget) {
+  const lower = channel.toLowerCase();
+
+  // War Room → reply to group chat via Zeus bot
+  if (lower.includes('war room')) {
+    const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
+    if (!warRoomId) {
+      console.warn('[Telegram] WAR_ROOM_CHAT_ID not set — cannot route War Room reply');
+      return null;
+    }
+    const bot = activeBots.get('zeus') ?? [...activeBots.values()][0];
+    if (!bot) { console.warn('[Telegram] No bot for War Room reply'); return null; }
+    return { bot, chatId: warRoomId };
+  }
+
+  // Telegram DM → route by user name embedded in channel string
+  if (lower.includes('telegram')) {
+    let chatId = null;
+    for (const [name, id] of USER_CHAT_IDS) {
+      if (lower.includes(name)) { chatId = id; break; }
+    }
+    if (!chatId) {
+      console.warn(`[Telegram] Cannot resolve chatId from channel "${channel}"`);
+      return null;
+    }
+    // Bot: match direct target agent if set, else Zeus for B3C responses
+    const botName = directTarget === 'poseidon' ? 'poseidon'
+                  : directTarget === 'hades'    ? 'hades'
+                  : 'zeus';
+    const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
+    if (!bot) { console.warn(`[Telegram] No bot available for ${botName} reply`); return null; }
+    return { bot, chatId };
+  }
+
+  // dashboard or unknown — no Telegram delivery needed
+  return null;
+}
+
+// ── Deliver request_complete output back to the right chat ────────────────────
+function routeComplete(event) {
+  const output = event.output;
+  if (!output) return;
+
+  // Path 1: pending map — exact chatId from the incoming Telegram message
+  const entry = pending.get(event.id);
+  if (entry) {
+    pending.delete(event.id);
+    console.log(`[Telegram] Reply via pending map → chatId=${entry.chatId} (id=${event.id})`);
+    sendReply(entry.bot, entry.chatId, output);
+    return;
+  }
+
+  // Path 2: channel-based routing — handles restarts and API-initiated missions
+  const channel = event.channel || '';
+  const dest = resolveDestination(channel, event.direct ?? null);
+  if (dest) {
+    console.log(`[Telegram] Reply via channel routing → chatId=${dest.chatId} channel="${channel}"`);
+    sendReply(dest.bot, dest.chatId, output);
+  }
+}
+
+// ── Internal broadcast subscriber ─────────────────────────────────────────────
+subscribe((event) => {
+  if (event.type !== 'request_complete') return;
+  routeComplete(event);
+});
+
+// ── Send a message to the Growth Grid group chat ──────────────────────────────
+export function sendToGrowthGrid(text) {
+  const chatId = Number(process.env.GROWTH_GRID_CHAT_ID);
+  if (!chatId) { console.warn('[Telegram] GROWTH_GRID_CHAT_ID not set'); return; }
+  const bot = activeBots.get('zeus') ?? [...activeBots.values()][0];
+  if (!bot) { console.warn('[Telegram] No bot available for Growth Grid'); return; }
+  bot.sendMessage(chatId, text, { parse_mode: 'Markdown' })
+    .catch(() => bot.sendMessage(chatId, text)
+      .catch(e => console.error('[Telegram] Growth Grid send error:', e.message)));
+}
+
+// ── Start all configured bots ─────────────────────────────────────────────────
+export function initTelegram() {
+  let started = 0;
+
+  for (const cfg of BOT_CONFIGS) {
+    const token = process.env[cfg.tokenEnv];
+    if (!token) {
+      console.warn(`[Telegram] ${cfg.tokenEnv} not set — skipping ${cfg.name} bot`);
+      continue;
+    }
+
+    let bot;
+    try {
+      bot = new TelegramBot(token, { polling: true });
+    } catch (err) {
+      console.error(`[Telegram] Failed to init ${cfg.name} bot:`, err.message);
+      continue;
+    }
+
+    console.log(`[Telegram] ${cfg.name} bot started (polling)`);
+    activeBots.set(cfg.name, bot);
+    started++;
+
+    bot.on('message', async (msg) => {
+      const userId  = msg.from?.id;
+      const chatId  = msg.chat.id;
+      const rawText = msg.text?.trim();
+
+      if (!rawText) return;
+
+      const userName = APPROVED_USERS.get(userId);
+      if (!userName) {
+        console.log(`[Telegram] Blocked userId=${userId} (not approved)`);
+        return;
+      }
+
+      // ── War Room group chat (Zeus bot only) ──────────────────────────────
+      const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
+      const isWarRoom = cfg.name === 'zeus' && warRoomId && chatId === warRoomId;
+
+      // Non-Zeus bots ignore group chats
+      if (cfg.name !== 'zeus' && msg.chat.type !== 'private') return;
+
+      // Build route
+      const routeTarget = isWarRoom ? 'zeus' : cfg.target;
+
+      const identityPrefix = isWarRoom
+        ? `Message from ${userName} in the War Room: `
+        : `Message from ${userName}: `;
+
+      let routeText;
+      if (cfg.name === 'zeus' && !isWarRoom && rawText.toUpperCase().startsWith('ZEUS PROTOCOL')) {
+        const stripped = rawText.replace(/^ZEUS PROTOCOL[:\s]*/i, '').trim();
+        routeText = `ZEUS PROTOCOL: ${identityPrefix}${stripped}`;
+      } else {
+        routeText = identityPrefix + rawText;
+      }
+
+      const channel = isWarRoom ? `War Room · ${userName}` : `Telegram · ${userName}`;
+
+      console.log(`[Telegram] ${isWarRoom ? 'war-room' : cfg.name} ← ${userName} (${userId}): ${rawText.slice(0, 60)}`);
+
+      try {
+        const res = await fetch('http://127.0.0.1:18780/request', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            text:      routeText,
+            channel,
+            target:    routeTarget,
+            userId:    String(userId),
+            isWarRoom: isWarRoom || undefined,
+          }),
+        });
+
+        const data = await res.json();
+
+        if (data.ok && data.id) {
+          // Store exact chatId + bot for primary return routing
+          pending.set(data.id, { chatId, bot });
+        } else {
+          await bot.sendMessage(chatId, '⚠️ Council unavailable. Try again.');
+        }
+      } catch (err) {
+        console.error(`[Telegram] Route error (${cfg.name}):`, err.message);
+        await bot.sendMessage(chatId, '⚠️ Framework unreachable.').catch(() => {});
+      }
+    });
+
+    bot.on('polling_error', (err) => {
+      console.error(`[Telegram] ${cfg.name} polling error:`, err.message);
+    });
+  }
+
+  if (started === 0) {
+    console.log('[Telegram] No bot tokens configured — Telegram integration disabled');
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "olympus-framework",
+  "version": "0.1.0",
+  "description": "Mount Olympus B3C multi-agent framework",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "express": "^4.19.2",
+    "node-cron": "^4.2.1",
+    "node-telegram-bot-api": "^0.67.0",
+    "ws": "^8.17.1"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(which node && node --version && which npm && npm --version)",
+      "Bash(npm install 2>&1)",
+      "Bash(curl -s -X POST http://localhost:18780/request \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{\"text\":\"hello olympus\",\"channel\":\"test\"}'\necho\ncurl -s -X POST http://localhost:18780/request \\\\\n  -H 'Content-Type: application/json' \\\\\n  -d '{\"text\":\"missing channel\"}')"
+    ]
+  }
+}
