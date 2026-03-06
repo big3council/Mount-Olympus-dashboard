@@ -12,11 +12,36 @@ directives. A React dashboard visualizes everything in real time.
 
 ## Git Workflow
 
-- **Remote:** `git@github.com:big3council/Mount-Olympus-dashboard.git`
-- **Main branch:** `main` — never commit directly to main except for CLAUDE.md updates; all work in branches
+**Remote:** `git@github.com:big3council/Mount-Olympus-dashboard.git`
+**Main branch:** `main`
+
+### MANDATORY — Start of every session
+
+```bash
+cd ~/olympus
+git pull origin main
+git checkout -b feature/[descriptive-name]
+```
+
+### MANDATORY — End of every session
+
+```bash
+git add -A
+git commit -m '[clear description of what changed]'
+git push origin feature/[branch-name]
+git checkout main
+git merge feature/[branch-name]
+git push origin main
+```
+
+### Rules
+
+- **Never commit directly to main** — all work happens in a branch
+- **Never push broken or untested code** — test before merging to main
+- **Every session gets its own branch** — even for small changes
 - **Branch naming:** `feature/[description]` for new features, `fix/[description]` for bug fixes
-- Merge to main with a descriptive commit message only when work is complete and tested
-- Never push broken code to main
+- **If something breaks:** rollback with `git checkout main -- [filename]` before merging
+- **`OlympusDashboard.backup.jsx` must never be deleted**
 
 ---
 
