@@ -115,12 +115,34 @@ function routeComplete(event) {
     return;
   }
 
-  // Path 2: channel-based routing — handles restarts and API-initiated missions
+  // Path 2: userId-based delivery — guaranteed for all recognized users regardless of origin channel
+  const userId = event.userId ? Number(event.userId) : null;
+  const userName = userId ? APPROVED_USERS.get(userId) : null;
+  if (!userName) return; // Only exception: missing or unrecognized userId
+
   const channel = event.channel || '';
-  const dest = resolveDestination(channel, event.direct ?? null);
-  if (dest) {
-    console.log(`[Telegram] Reply via channel routing → chatId=${dest.chatId} channel="${channel}"`);
-    sendReply(dest.bot, dest.chatId, output);
+  const isWarRoom = channel.toLowerCase().includes('war room');
+
+  // Select bot by direct target agent (for per-agent missions), else Zeus
+  const botName = event.direct === 'poseidon' ? 'poseidon'
+                : event.direct === 'hades'    ? 'hades'
+                : 'zeus';
+  const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
+
+  // Always deliver to user's DM (Telegram DM chatId === userId for private chats)
+  if (bot) {
+    console.log(`[Telegram] Reply via userId → ${userName} chatId=${userId} (id=${event.id})`);
+    sendReply(bot, userId, output);
+  }
+
+  // Also deliver to War Room group chat if that was the origin channel
+  if (isWarRoom) {
+    const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
+    const wrBot = activeBots.get('zeus') ?? [...activeBots.values()][0];
+    if (warRoomId && wrBot) {
+      console.log(`[Telegram] Also delivering to War Room chatId=${warRoomId} (id=${event.id})`);
+      sendReply(wrBot, warRoomId, output);
+    }
   }
 }
 

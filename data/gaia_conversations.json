@@ -60,6 +60,11 @@
         "role": "assistant",
         "text": "Classic. A man who knows what he wants. 🥩\n\nHonestly, I respect it — there's something primal and satisfying about a good steak or a perfectly built burger. Are you a smash burger guy or more of a thick patty kind of person? And steak — what's your cut?",
         "timestamp": "2026-03-05T16:54:24.738Z"
+      },
+      {
+        "role": "assistant",
+        "text": "HEARTBEAT_OK",
+        "timestamp": "2026-03-06T10:23:40.609Z"
       }
     ]
   }

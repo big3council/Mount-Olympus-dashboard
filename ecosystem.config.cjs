@@ -17,6 +17,7 @@ module.exports = {
       autorestart:   true,
       restart_delay: 2000,
       max_restarts:  20,
+      kill_timeout:  5000,
       env: {
         NODE_ENV: 'production',
       },
