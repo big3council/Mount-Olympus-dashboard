@@ -1,21 +1,49 @@
 import { broadcast } from './olympus-ws.js';
+import { readFileSync } from 'fs';
 import { callZeus, callPoseidon, callHades } from './agentCalls.js';
 import { observeMission } from './gaia.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
-// Delegates classification entirely to Zeus. He receives the full message
-// (including identity context) and uses his own judgment to route the request.
-// His response is trusted directly — no override logic applied.
+// Delegates classification entirely to Zeus. He reads his CLASSIFY.md guide
+// (~/olympus/zeus/CLASSIFY.md) on every call — update that file to tune his
+// routing decisions over time. His response is trusted directly with no
+// override logic applied.
+
+const CLASSIFY_MD_PATH = '/Users/zeus/olympus/zeus/CLASSIFY.md';
+
+function readClassifyGuide() {
+  try {
+    return readFileSync(CLASSIFY_MD_PATH, 'utf8');
+  } catch {
+    return null;
+  }
+}
+
 export async function classifyRequest(rawInput) {
-  const response = await callZeus(
-    `Classify the following message as exactly one of:
+  const guide = readClassifyGuide();
+
+  const prompt = guide
+    ? `You are Zeus. Classify the following mission using your classification guide.
+
+YOUR CLASSIFICATION GUIDE (${CLASSIFY_MD_PATH}):
+${guide}
+
+---
+
+Classify this message as exactly one of: TIER_1, TIER_2, or TIER_3.
+Reply with only the tier label — nothing else.
+
+MESSAGE TO CLASSIFY:
+${rawInput}`
+    : `Classify the following message as exactly one of:
 TIER_1 — Simple, conversational, quick. You respond alone on behalf of the council. No deliberation needed.
 TIER_2 — Focused task or domain-specific request. All three council members contribute but deliberation is streamlined and fast.
 TIER_3 — Complex, multi-domain, high stakes, or strategic. Full B3C council with complete deliberation cycle.
 Reply with only TIER_1, TIER_2, or TIER_3.
 
-${rawInput}`
-  );
+${rawInput}`;
+
+  const response = await callZeus(prompt);
 
   const raw = response.trim().toUpperCase().split(/\s+/)[0];
   if (raw === 'TIER_1' || raw === 'TIER_2' || raw === 'TIER_3') {

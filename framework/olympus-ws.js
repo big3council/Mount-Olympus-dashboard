@@ -48,15 +48,28 @@ export function initWS(httpServer) {
 }
 
 export function broadcast(event) {
-  // Notify internal subscribers first (e.g. Telegram reply handler)
+  // Send to WS clients FIRST — before internal subscribers fire.
+  //
+  // Why: internal subscribers (queue slot release) call releaseSlot → drainQueue
+  // → startMission → broadcast(...) re-entrantly. Those nested broadcasts also
+  // send to WS clients. If subscribers ran first, the outer event (e.g.
+  // request_complete) would reach the dashboard AFTER the nested events from
+  // the next mission (request_start, queue_update), causing ordering issues and
+  // in some cases losing the outer event under buffer pressure.
+  //
+  // With WS delivery first: every event reaches the dashboard synchronously
+  // before any downstream effects (slot release, new mission start) run.
+  if (wss) {
+    const payload = JSON.stringify(event);
+    for (const client of wss.clients) {
+      if (client.readyState === 1) { // OPEN
+        client.send(payload);
+      }
+    }
+  }
+
+  // Internal subscribers (Telegram routing, slot release) fire after WS delivery.
   for (const fn of subscribers) {
     try { fn(event); } catch (e) { console.error('[WS] subscriber error:', e.message); }
-  }
-  if (!wss) return;
-  const payload = JSON.stringify(event);
-  for (const client of wss.clients) {
-    if (client.readyState === 1) { // OPEN
-      client.send(payload);
-    }
   }
 }
