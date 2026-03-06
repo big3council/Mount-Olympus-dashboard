@@ -683,3 +683,6 @@ Currently all four nodes mount `/Volumes/olympus` using "Map all users to admin"
 Gaia's value is the integrity of her independent observation. If B3C nodes can write to her audit/retrospective files — even accidentally — it compromises her oversight role.
 
 **Current risk:** Low. No framework code paths write to Gaia's directories from B3C nodes. This is architectural hardening, not an active vulnerability.
+
+### Cross-Agent Write Risk (Rogue Agent Scenario)
+Since all nodes mount as the same NFS user ("admin"), any node can technically write to any other node's agent files on the NAS. Example: Zeus could overwrite `/Volumes/olympus/agents/poseidon/SOUL.md`. Poseidon would load the tampered identity on next OpenClaw session start. This is not a current code risk — no framework paths do this — but it is a real architectural vulnerability. Per-node NFS user mapping is the proper fix and is part of Phase 2 hardening.
