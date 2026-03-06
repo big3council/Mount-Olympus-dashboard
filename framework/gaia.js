@@ -372,7 +372,7 @@ export async function runDirectGaia(requestId, text, channel, userId = null, con
     const elapsed   = Date.now() - start;
 
     // Broadcast request_complete so Telegram subscriber delivers the reply
-    broadcast({ type: 'request_complete', id: requestId, elapsed, output: response, channel, direct: 'gaia' });
+    broadcast({ type: 'request_complete', id: requestId, elapsed, output: response, channel, direct: 'gaia', ...(userId != null ? { userId: String(userId) } : {}) });
 
     // Broadcast gaia_message so the dashboard chat thread updates live
     broadcast({ type: 'gaia_message', text, response, userId, channel, timestamp });

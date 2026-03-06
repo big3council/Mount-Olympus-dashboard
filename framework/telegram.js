@@ -46,13 +46,42 @@ const activeBots = new Map();
 // Primary return path — has the exact chatId from the incoming Telegram message.
 const pending = new Map();
 
+// ── Telegram message length limit ─────────────────────────────────────────────
+const TG_LIMIT = 4096;
+const TG_SAFE  = 4000; // split point — leaves buffer for Markdown formatting
+
+// Split long text into ≤ TG_LIMIT chunks at natural boundaries.
+function splitMessage(text) {
+  if (text.length <= TG_LIMIT) return [text];
+  const chunks = [];
+  let remaining = text;
+  while (remaining.length > TG_LIMIT) {
+    let splitAt = remaining.lastIndexOf('\n\n', TG_SAFE); // paragraph boundary
+    if (splitAt < 200) splitAt = remaining.lastIndexOf('\n', TG_SAFE); // line boundary
+    if (splitAt < 200) splitAt = TG_SAFE;                              // hard split
+    chunks.push(remaining.slice(0, splitAt).trim());
+    remaining = remaining.slice(splitAt).trim();
+  }
+  if (remaining.length > 0) chunks.push(remaining);
+  return chunks;
+}
+
 // ── Send a message (Markdown → plain text fallback) ───────────────────────────
 function sendReply(bot, chatId, text) {
-  bot.sendMessage(chatId, text, { parse_mode: 'Markdown' })
+  return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' })
     .catch(() =>
       bot.sendMessage(chatId, text)
         .catch(e => console.error('[Telegram] Failed to send reply:', e.message))
     );
+}
+
+// ── Send a long message, splitting into chunks if needed ──────────────────────
+async function sendChunked(bot, chatId, text) {
+  const chunks = splitMessage(text);
+  for (let i = 0; i < chunks.length; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 500)); // rate limit: ~1 msg/sec
+    await sendReply(bot, chatId, chunks[i]);
+  }
 }
 
 // ── Resolve delivery destination from channel string ─────────────────────────
@@ -111,14 +140,17 @@ function routeComplete(event) {
   if (entry) {
     pending.delete(event.id);
     console.log(`[Telegram] Reply via pending map → chatId=${entry.chatId} (id=${event.id})`);
-    sendReply(entry.bot, entry.chatId, output);
+    sendChunked(entry.bot, entry.chatId, output).catch(e =>
+      console.error('[Telegram] Path 1 delivery failed:', e.message)
+    );
     return;
   }
 
-  // Path 2: userId-based delivery — guaranteed for all recognized users regardless of origin channel
+  // Path 2: userId-based delivery — handles dashboard missions and restart recovery.
+  // userId is now included in request_complete by b3c.js, direct.js, and gaia.js.
   const userId = event.userId ? Number(event.userId) : null;
   const userName = userId ? APPROVED_USERS.get(userId) : null;
-  if (!userName) return; // Only exception: missing or unrecognized userId
+  if (!userName) return; // No userId or unrecognized user — no Telegram delivery
 
   const channel = event.channel || '';
   const isWarRoom = channel.toLowerCase().includes('war room');
@@ -129,10 +161,12 @@ function routeComplete(event) {
                 : 'zeus';
   const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
 
-  // Always deliver to user's DM (Telegram DM chatId === userId for private chats)
+  // Deliver to user's DM (Telegram DM chatId === userId for private chats)
   if (bot) {
-    console.log(`[Telegram] Reply via userId → ${userName} chatId=${userId} (id=${event.id})`);
-    sendReply(bot, userId, output);
+    console.log(`[Telegram] Reply via userId → ${userName} chatId=${userId} bot=${botName} (id=${event.id})`);
+    sendChunked(bot, userId, output).catch(e =>
+      console.error('[Telegram] Path 2 DM delivery failed:', e.message)
+    );
   }
 
   // Also deliver to War Room group chat if that was the origin channel
@@ -141,7 +175,9 @@ function routeComplete(event) {
     const wrBot = activeBots.get('zeus') ?? [...activeBots.values()][0];
     if (warRoomId && wrBot) {
       console.log(`[Telegram] Also delivering to War Room chatId=${warRoomId} (id=${event.id})`);
-      sendReply(wrBot, warRoomId, output);
+      sendChunked(wrBot, warRoomId, output).catch(e =>
+        console.error('[Telegram] Path 2 War Room delivery failed:', e.message)
+      );
     }
   }
 }
@@ -165,6 +201,10 @@ export function sendToGrowthGrid(text) {
 
 // ── Start all configured bots ─────────────────────────────────────────────────
 export function initTelegram() {
+  if (activeBots.size > 0) {
+    console.warn('[Telegram] initTelegram called again — already initialized, skipping');
+    return;
+  }
   let started = 0;
 
   for (const cfg of BOT_CONFIGS) {

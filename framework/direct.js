@@ -16,7 +16,7 @@ const AGENTS = {
   hades:    { call: callHades },
 };
 
-export async function runDirect(agentName, requestId, text, channel) {
+export async function runDirect(agentName, requestId, text, channel, userId = null) {
   const start = Date.now();
   console.log(`[Direct] ${agentName} → id=${requestId}`);
 
@@ -35,6 +35,7 @@ export async function runDirect(agentName, requestId, text, channel) {
       output:  response,
       channel,
       direct:  agentName,
+      ...(userId != null ? { userId: String(userId) } : {}),
     });
 
     console.log(`[Direct] ${agentName} complete in ${((Date.now() - start) / 1000).toFixed(1)}s`);

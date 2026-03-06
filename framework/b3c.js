@@ -109,7 +109,7 @@ async function runTier1(requestId, userInput, channel, userId = null) {
 
   const elapsed = Date.now() - start;
   broadcast({ type: 'stage_change',    id: requestId, stage: 'done' });
-  broadcast({ type: 'request_complete', id: requestId, elapsed, output: response, channel, tier: 'TIER_1' });
+  broadcast({ type: 'request_complete', id: requestId, elapsed, output: response, channel, tier: 'TIER_1', ...(userId != null ? { userId: String(userId) } : {}) });
 
   // Observe
   try {
@@ -240,7 +240,7 @@ Weave the available layers together seamlessly. This is the council's delivered 
   const t2Elapsed = Date.now() - start;
 
   broadcast({ type: 'stage_change',    id: requestId, stage: 'done' });
-  broadcast({ type: 'request_complete', id: requestId, elapsed: t2Elapsed, output: synthesis, channel, tier: 'TIER_2', councils: 2 });
+  broadcast({ type: 'request_complete', id: requestId, elapsed: t2Elapsed, output: synthesis, channel, tier: 'TIER_2', councils: 2, ...(userId != null ? { userId: String(userId) } : {}) });
 
   // Observe
   try {
@@ -562,7 +562,7 @@ Synthesize all available domain deliverables into a single coherent, integrated 
   const t3Elapsed = Date.now() - start;
 
   broadcast({ type: 'stage_change',    id: requestId, stage: 'done' });
-  broadcast({ type: 'request_complete', id: requestId, elapsed: t3Elapsed, output: finalOutput, channel, tier: 'TIER_3', councils: 2 });
+  broadcast({ type: 'request_complete', id: requestId, elapsed: t3Elapsed, output: finalOutput, channel, tier: 'TIER_3', councils: 2, ...(userId != null ? { userId: String(userId) } : {}) });
 
   // Observe
   try {

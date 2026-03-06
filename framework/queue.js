@@ -193,12 +193,12 @@ function startMission(mission) {
   if (target === 'gaia') {
     promise = runDirectGaia(id, text, channel, userId ?? null, messages ?? null);
   } else if (target === 'poseidon') {
-    promise = runDirect('poseidon', id, text, channel);
+    promise = runDirect('poseidon', id, text, channel, userId ?? null);
   } else if (target === 'hades') {
-    promise = runDirect('hades', id, text, channel);
+    promise = runDirect('hades', id, text, channel, userId ?? null);
   } else if (text.toUpperCase().startsWith('ZEUS PROTOCOL')) {
     const stripped = text.replace(/^ZEUS PROTOCOL[:\s]*/i, '').trim();
-    promise = runDirect('zeus', id, stripped, channel);
+    promise = runDirect('zeus', id, stripped, channel, userId ?? null);
   } else {
     // B3C — pass pre-classified tier to skip re-classification
     promise = runB3C(id, text, channel, tier, userId ?? null);
