@@ -1109,6 +1109,7 @@ const css = `
   .queue-item-tier { font-family: 'Cinzel', serif; font-size: 7px; color: var(--dim); flex-shrink: 0; }
   .queue-item-user { font-family: 'Cinzel', serif; font-size: 7px; color: var(--muted); flex-shrink: 0; opacity: 0.8; }
   .queue-item-text { font-size: 9px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue-item-wait { font-size: 7px; color: rgba(232,184,75,0.55); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; letter-spacing: 0.04em; }
   .queue-item-cancel {
     opacity: 0; transition: opacity 0.15s;
     background: rgba(255,60,60,0.08); border: 1px solid rgba(255,80,80,0.25);
@@ -2424,6 +2425,10 @@ export default function OlympusDashboard() {
           setQueueState(msg.queue ?? []);
           break;
 
+        case "queue_ack":
+          // Queue acknowledgment — handled by Telegram; dashboard shows it via queue_update
+          break;
+
         case "queue_reorder": {
           const notifTs = Date.now();
           setZeusReorderNotif({ reason: msg.reason, ts: notifTs });
@@ -2900,19 +2905,22 @@ export default function OlympusDashboard() {
           </div>
         )}
         <div className="queue-slot-pills">
-          {[
-            { key: "TIER_1", label: "TIER I",   max: 3, cls: "t1" },
-            { key: "TIER_2", label: "TIER II",  max: 2, cls: "t2" },
-            { key: "TIER_3", label: "TIER III", max: 1, cls: "t3" },
-          ].map(({ key, label, max, cls }) => {
-            const rCount = queueState.filter(q => q.status === "running" && q.tier === key).length;
+          {(() => {
+            const t1Count     = queueState.filter(q => q.status === "running" && q.tier === "TIER_1").length;
+            const councilCount = queueState.filter(q => q.status === "running" && (q.tier === "TIER_2" || q.tier === "TIER_3")).length;
             return (
-              <div key={key} className={`queue-slot-pill ${cls}${rCount > 0 ? " occupied" : ""}`}>
-                <div className="queue-pill-label">{label}</div>
-                <div className="queue-pill-count">{rCount}/{max}</div>
-              </div>
+              <>
+                <div className={`queue-slot-pill t1${t1Count > 0 ? " occupied" : ""}`}>
+                  <div className="queue-pill-label">TIER I</div>
+                  <div className="queue-pill-count">instant</div>
+                </div>
+                <div className={`queue-slot-pill t2${councilCount > 0 ? " occupied" : ""}`}>
+                  <div className="queue-pill-label">COUNCIL</div>
+                  <div className="queue-pill-count">{councilCount}/1</div>
+                </div>
+              </>
             );
-          })}
+          })()}
         </div>
         {queueState.length === 0 ? (
           <div className="queue-empty-line">Queue clear</div>
@@ -2935,6 +2943,7 @@ export default function OlympusDashboard() {
                   {tierLabel && <span className="queue-item-tier">{tierLabel}</span>}
                   {userLabel && <span className="queue-item-user">{userLabel}</span>}
                   <span className="queue-item-text">{q.text.slice(0, 40)}{q.text.length > 40 ? "…" : ""}</span>
+                  {q.status === "pending" && q.estimatedWait && <span className="queue-item-wait">{q.estimatedWait}</span>}
                   <button className="queue-item-cancel" onClick={(e) => handleCancelMission(q.id, e)} title="Cancel">✕</button>
                 </div>
               );

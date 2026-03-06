@@ -182,8 +182,40 @@ function routeComplete(event) {
   }
 }
 
+// ── Deliver queue acknowledgment to Telegram ──────────────────────────────────
+function deliverAck(event) {
+  const userId   = event.userId ? Number(event.userId) : null;
+  const userName = userId ? APPROVED_USERS.get(userId) : null;
+  if (!userName || !event.ackText) return;
+
+  const channel    = event.channel || '';
+  const isWarRoom  = channel.toLowerCase().includes('war room');
+  const botName    = event.target === 'poseidon' ? 'poseidon'
+                   : event.target === 'hades'    ? 'hades'
+                   : 'zeus';
+  const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
+  if (!bot) return;
+
+  // DM the user
+  sendReply(bot, userId, event.ackText).catch(e =>
+    console.error('[Telegram] Ack DM delivery failed:', e.message)
+  );
+
+  // Also post to War Room if that was the origin
+  if (isWarRoom) {
+    const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
+    const wrBot = activeBots.get('zeus') ?? [...activeBots.values()][0];
+    if (warRoomId && wrBot) {
+      sendReply(wrBot, warRoomId, event.ackText).catch(e =>
+        console.error('[Telegram] Ack War Room delivery failed:', e.message)
+      );
+    }
+  }
+}
+
 // ── Internal broadcast subscriber ─────────────────────────────────────────────
 subscribe((event) => {
+  if (event.type === 'queue_ack') { deliverAck(event); return; }
   if (event.type !== 'request_complete') return;
   routeComplete(event);
 });

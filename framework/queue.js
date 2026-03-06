@@ -1,13 +1,13 @@
 /**
- * queue.js — Unified mission queue with tier-based concurrency.
+ * queue.js — Unified mission queue with smart concurrency.
  *
- * Concurrency limits:
- *   TIER_1: 3 concurrent
- *   TIER_2: 2 concurrent
- *   TIER_3: 1 concurrent
+ * Concurrency model:
+ *   TIER_1: always runs immediately — no queue, no acknowledgment
+ *   TIER_2 + TIER_3: share ONE council slot — one at a time
  *   DIRECT: 3 concurrent (zeus_protocol, poseidon, hades, gaia)
  *
- * Priority: missions with priority flag jump the queue after Zeus evaluation.
+ * When a TIER_2 or TIER_3 mission cannot start immediately, it is queued
+ * and Zeus sends an instant acknowledgment with queue position + estimated wait.
  * Zeus also reviews the full queue after every new addition and may reorder.
  */
 
@@ -19,12 +19,8 @@ import { runDirectGaia } from './gaia.js';
 import { callZeus } from './agentCalls.js';
 
 // ── Concurrency limits ────────────────────────────────────────────────────────
-const TIER_LIMITS = {
-  TIER_1: 3,
-  TIER_2: 2,
-  TIER_3: 1,
-  DIRECT: 3,
-};
+const COUNCIL_LIMIT = 1;  // TIER_2 + TIER_3 share one council slot
+const DIRECT_LIMIT  = 3;  // poseidon, hades, gaia, ZEUS PROTOCOL
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const pending     = [];         // missions waiting to run
@@ -45,11 +41,24 @@ function runningCount(tier) {
   return n;
 }
 
-function hasOpenSlot(tier) {
-  return runningCount(tier) < (TIER_LIMITS[tier] ?? TIER_LIMITS.DIRECT);
+// Count of TIER_2 + TIER_3 missions currently running (share one council slot)
+function councilRunningCount() {
+  let n = 0;
+  for (const [, entry] of running) {
+    const t = effectiveTier(entry.mission);
+    if (t === 'TIER_2' || t === 'TIER_3') n++;
+  }
+  return n;
 }
 
-// Find index of next pending mission that has an open slot
+function hasOpenSlot(tier) {
+  if (tier === 'TIER_1') return true;                          // always instant
+  if (tier === 'DIRECT') return runningCount('DIRECT') < DIRECT_LIMIT;
+  return councilRunningCount() < COUNCIL_LIMIT;               // TIER_2 + TIER_3 share
+}
+
+// Find index of next pending mission that has an open slot.
+// For TIER_2/TIER_3: only one council slot exists — pick the first eligible one.
 function nextEligibleIndex() {
   for (let i = 0; i < pending.length; i++) {
     if (hasOpenSlot(effectiveTier(pending[i]))) return i;
@@ -60,8 +69,17 @@ function nextEligibleIndex() {
 // ── Broadcast ─────────────────────────────────────────────────────────────────
 
 function broadcastQueue() {
-  const queue = [
-    ...pending.map((m, i) => ({
+  // Track how many council missions are ahead as we iterate pending
+  let councilAhead = councilRunningCount(); // missions running ahead of first pending
+
+  const pendingItems = pending.map((m, i) => {
+    let estimatedWait;
+    if (m.tier === 'TIER_2' || m.tier === 'TIER_3') {
+      const avgMin = m.tier === 'TIER_3' ? 8 : 3;
+      estimatedWait = `~${councilAhead * avgMin} min`;
+      councilAhead++;
+    }
+    return {
       id:       m.id,
       position: i + 1,
       tier:     m.tier,
@@ -70,19 +88,22 @@ function broadcastQueue() {
       target:   m.target,
       priority: m.priority,
       status:   'pending',
-    })),
-    ...[...running.values()].map(({ mission: m }) => ({
-      id:       m.id,
-      position: 0,
-      tier:     m.tier,
-      userId:   m.userId ?? null,
-      text:     m.text.slice(0, 60),
-      target:   m.target,
-      priority: m.priority,
-      status:   'running',
-    })),
-  ];
-  broadcast({ type: 'queue_update', queue });
+      ...(estimatedWait ? { estimatedWait } : {}),
+    };
+  });
+
+  const runningItems = [...running.values()].map(({ mission: m }) => ({
+    id:       m.id,
+    position: 0,
+    tier:     m.tier,
+    userId:   m.userId ?? null,
+    text:     m.text.slice(0, 60),
+    target:   m.target,
+    priority: m.priority,
+    status:   'running',
+  }));
+
+  broadcast({ type: 'queue_update', queue: [...pendingItems, ...runningItems] });
 }
 
 // ── Priority evaluation ───────────────────────────────────────────────────────
@@ -277,32 +298,56 @@ export async function enqueue(mission) {
     timestamp: Date.now(),
   };
 
-  // If slot is open and nothing pending, start immediately
-  if (hasOpenSlot(tier) && pending.length === 0) {
+  // ── TIER_1: always runs immediately, no queue, no acknowledgment ──────────
+  if (tier === 'TIER_1') {
     startMission(entry);
     broadcastQueue();
     return;
   }
 
-  // Priority: ask Zeus whether to jump
-  if (priority && pending.length > 0) {
-    const decision = await zeusEvalPriority(entry);
-    if (cancelledIds.has(id)) return;
-    if (decision === 'JUMP') {
-      pending.unshift(entry);
-    } else {
-      pending.push(entry);
+  // ── DIRECT: existing concurrency slot model ────────────────────────────────
+  if (tier === 'DIRECT') {
+    if (hasOpenSlot('DIRECT') && pending.length === 0) {
+      startMission(entry);
+      broadcastQueue();
+      return;
     }
-  } else {
     pending.push(entry);
+    broadcastQueue();
+    drainQueue();
+    return;
   }
 
+  // ── TIER_2 / TIER_3: shared council slot ──────────────────────────────────
+  // Start immediately only if the council slot is free AND no council missions
+  // are already pending (fairness — don't skip the queue).
+  const councilPendingCount = pending.filter(
+    m => m.tier === 'TIER_2' || m.tier === 'TIER_3'
+  ).length;
+
+  if (councilRunningCount() < COUNCIL_LIMIT && councilPendingCount === 0) {
+    startMission(entry);
+    broadcastQueue();
+    return;
+  }
+
+  // Council slot is full or other missions ahead — queue it and send ack.
+  pending.push(entry);
+
+  // Compute queue position and estimated wait for the acknowledgment.
+  const queuePosition = councilPendingCount + 1;  // 1-indexed in council queue
+  const councilAhead  = councilRunningCount() + councilPendingCount; // missions before this one
+  const avgMin        = tier === 'TIER_3' ? 8 : 3;
+  const estimatedMin  = councilAhead * avgMin;
+  const estimatedWait = `~${estimatedMin} min`;
+  const ackText       = `Got it — you're #${queuePosition} in queue. Estimated wait: ${estimatedWait}. I'll have the council on it shortly.`;
+
+  broadcast({ type: 'queue_ack', id, userId: userId ?? null, channel, target, ackText, queuePosition, estimatedWait });
   broadcastQueue();
 
   // Zeus reviews queue asynchronously (non-blocking)
   zeusReviewQueue().catch(() => {});
 
-  // Drain — a slot may be open for this tier even with other tiers queued
   drainQueue();
 }
 
