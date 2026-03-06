@@ -3,47 +3,28 @@ import { callZeus, callPoseidon, callHades } from './agentCalls.js';
 import { observeMission } from './gaia.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
-// Strips identity prefix (e.g. "Message from Carson: ") before classifying so
-// routing context never inflates the apparent complexity of the request.
+// Delegates classification entirely to Zeus. He receives the full message
+// (including identity context) and uses his own judgment to route the request.
+// His response is trusted directly — no override logic applied.
 export async function classifyRequest(rawInput) {
-  const stripped = rawInput.replace(/^Message from [^:]+:\s*/i, '').trim();
-
   const response = await callZeus(
-    `You are the B3C tier classifier. Classify the request below into exactly one tier. Respond with ONLY the label — no explanation, no punctuation, nothing else.
+    `Classify the following message as exactly one of:
+TIER_1 — Simple, conversational, quick. You respond alone on behalf of the council. No deliberation needed.
+TIER_2 — Focused task or domain-specific request. All three council members contribute but deliberation is streamlined and fast.
+TIER_3 — Complex, multi-domain, high stakes, or strategic. Full B3C council with complete deliberation cycle.
+Reply with only TIER_1, TIER_2, or TIER_3.
 
-TIER_1 — Greetings, status checks, casual conversation, simple yes/no questions. A single voice handles it completely.
-  1. "hey are you there"
-  2. "how are you doing"
-  3. "thanks, that was helpful"
-  4. "who are you"
-  5. "what time is it in Tokyo"
-
-TIER_2 — Clear focused tasks with a defined output: writing, coding, analysis, research, explanations, recommendations. Multiple perspectives add value but full deliberation is not needed.
-  1. "write me a cover letter for a software engineering role"
-  2. "explain how TCP/IP works"
-  3. "give me 5 business name ideas for a coffee shop"
-  4. "debug this Python function and fix the off-by-one error"
-  5. "summarize the pros and cons of remote work"
-
-TIER_3 — Genuinely complex multi-domain problems, high-stakes decisions, strategic questions requiring the full council's deliberation and unanimous agreement.
-  1. "help me restructure my company's organizational model"
-  2. "what should my long-term investment strategy be given my goals"
-  3. "design the full architecture for a distributed real-time trading system"
-  4. "I'm considering leaving my career — help me think through this decision"
-  5. "build a comprehensive go-to-market plan for our product launch"
-
-When in doubt, promote UP — never under-serve a request.
-
-REQUEST: ${stripped}
-
-Respond with exactly one of: TIER_1  TIER_2  TIER_3`
+${rawInput}`
   );
 
-  const raw    = response.trim().toUpperCase().split(/\s+/)[0];
-  const result = raw === 'TIER_1' ? 'TIER_1' : raw === 'TIER_2' ? 'TIER_2' : 'TIER_3';
+  const raw = response.trim().toUpperCase().split(/\s+/)[0];
+  if (raw === 'TIER_1' || raw === 'TIER_2' || raw === 'TIER_3') {
+    console.log(`[CLASSIFY] '${rawInput.slice(0, 60)}' → ${raw}`);
+    return raw;
+  }
 
-  console.log(`[CLASSIFY] '${stripped.slice(0, 60)}' → ${result}`);
-  return result;
+  console.warn(`[CLASSIFY] Zeus returned unexpected response: "${response.slice(0, 80)}" — defaulting to TIER_3`);
+  return 'TIER_3';
 }
 
 // ── Agent call helpers ────────────────────────────────────────────────────────
