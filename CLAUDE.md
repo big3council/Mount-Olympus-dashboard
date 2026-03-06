@@ -667,3 +667,19 @@ Dashboard `handleSend` prepends identity when `activeUser` badge is set:
 ### Gaia Conversation Webhook
 - Rather than polling every 30s, Gaia pushes directly to `POST /gaia/message`
 - Requires webhook configuration on Gaia's OpenClaw gateway
+
+## Phase 2 Hardening — NAS Permission Enforcement
+
+**Status: Deferred to Phase 2**
+
+Currently all four nodes mount `/Volumes/olympus` using "Map all users to admin" NFS squash, meaning the NAS cannot distinguish between nodes. This means filesystem-level access control between the B3C and Gaia's directories is not yet enforced.
+
+**Required work:**
+- Gaia's directories (`/Volumes/olympus/gaia/`) should be write-accessible only to Gaia
+- B3C nodes should have read-only or no access to `/Volumes/olympus/gaia/`
+- Implementation options: separate NFS exports per node, or per-node user mapping with different NAS permissions
+
+**Why it matters:**
+Gaia's value is the integrity of her independent observation. If B3C nodes can write to her audit/retrospective files — even accidentally — it compromises her oversight role.
+
+**Current risk:** Low. No framework code paths write to Gaia's directories from B3C nodes. This is architectural hardening, not an active vulnerability.
