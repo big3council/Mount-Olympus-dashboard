@@ -20,7 +20,7 @@ import { initGaia, runDirectGaia, gaiaInitiateCouncil, observeMission, executeSS
 const PORT = 18780;
 
 // ── Mission persistence ───────────────────────────────────────────────────────
-const MISSIONS_DIR  = path.join(os.homedir(), 'olympus', 'data');
+const MISSIONS_DIR  = '/Volumes/olympus/missions';
 const MISSIONS_FILE = path.join(MISSIONS_DIR, 'missions.json');
 const GAIA_CONVS_FILE = path.join(MISSIONS_DIR, 'gaia_conversations.json');
 
@@ -174,7 +174,7 @@ app.post('/gaia/conversations/:id', (req, res) => {
 
 // ── Gaia council log — recent council conversations ───────────────────────────
 app.get('/gaia/council', (_req, res) => {
-  const logFile = path.join(os.homedir(), 'olympus', 'gaia', 'council-log.json');
+  const logFile = '/Volumes/olympus/gaia/council-log.json';
   try {
     if (fs.existsSync(logFile)) {
       const log = JSON.parse(fs.readFileSync(logFile, 'utf8'));
@@ -187,7 +187,7 @@ app.get('/gaia/council', (_req, res) => {
 
 // ── Gaia retrospectives — persisted nightly retrospective texts ───────────────
 app.get('/gaia/retrospectives', (_req, res) => {
-  const retrosFile = path.join(os.homedir(), 'olympus', 'gaia', 'retrospectives.json');
+  const retrosFile = '/Volumes/olympus/gaia/retrospectives.json';
   try {
     if (fs.existsSync(retrosFile)) {
       const retros = JSON.parse(fs.readFileSync(retrosFile, 'utf8'));

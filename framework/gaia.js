@@ -23,11 +23,11 @@ import { callZeus, callPoseidon, callHades, callGaia } from './agentCalls.js';
 export { callGaia };
 
 // ── File paths ─────────────────────────────────────────────────────────────────
-const MISSIONS_FILE      = path.join(os.homedir(), 'olympus', 'data', 'missions.json');
-const OBSERVATIONS_DIR   = path.join(os.homedir(), 'olympus', 'gaia', 'observations');
-const COUNCIL_LOG_FILE   = path.join(os.homedir(), 'olympus', 'gaia', 'council-log.json');
-const RETROSPECTIVES_FILE = path.join(os.homedir(), 'olympus', 'gaia', 'retrospectives.json');
-const SSH_CONTROL_LOG    = path.join(os.homedir(), 'olympus', 'gaia', 'ssh-control.log');
+const MISSIONS_FILE      = '/Volumes/olympus/missions/missions.json';
+const OBSERVATIONS_DIR   = '/Volumes/olympus/gaia/observations';
+const COUNCIL_LOG_FILE   = '/Volumes/olympus/gaia/council-log.json';
+const RETROSPECTIVES_FILE = '/Volumes/olympus/gaia/retrospectives.json';
+const SSH_CONTROL_LOG    = '/Volumes/olympus/gaia/ssh-control.log';
 
 // ── SSH node map ───────────────────────────────────────────────────────────────
 const SSH_NODE_IPS = {
