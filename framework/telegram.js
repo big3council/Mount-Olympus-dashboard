@@ -40,7 +40,6 @@ const BOT_CONFIGS = [
 
 // ── Active bot instances (name → bot) ─────────────────────────────────────────
 const activeBots = new Map();
-let _initialized = false;
 
 // ── Pending reply map: requestId → { chatId, bot } ───────────────────────────
 // Populated by the bot message handler as soon as /request returns an id.
@@ -233,25 +232,11 @@ export function sendToGrowthGrid(text) {
 }
 
 // ── Start all configured bots ─────────────────────────────────────────────────
-
-// Graceful shutdown — stops polling before exit so Telegram releases the session
-async function stopAllBots() {
-  if (activeBots.size === 0) return;
-  console.log('[Telegram] Graceful shutdown — stopping all bots...');
-  await Promise.all([...activeBots.values()].map(b => b.stopPolling().catch(() => {})));
-  await new Promise(r => setTimeout(r, 1500));
-  console.log('[Telegram] All bots stopped.');
-}
-process.on('SIGINT',  async () => { await stopAllBots(); process.exit(0); });
-process.on('SIGTERM', async () => { await stopAllBots(); process.exit(0); });
-
 export function initTelegram() {
-  if (_initialized) {
+  if (activeBots.size > 0) {
     console.warn('[Telegram] initTelegram called again — already initialized, skipping');
     return;
   }
-  _initialized = true;
-  
   let started = 0;
 
   for (const cfg of BOT_CONFIGS) {
@@ -340,7 +325,6 @@ export function initTelegram() {
     });
 
     bot.on('polling_error', (err) => {
-      if (err.message?.includes('409')) return;
       console.error(`[Telegram] ${cfg.name} polling error:`, err.message);
     });
   }
