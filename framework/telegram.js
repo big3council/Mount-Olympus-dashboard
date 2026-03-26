@@ -33,9 +33,9 @@ const USER_CHAT_IDS = new Map([
 
 // ── Bot configuration ─────────────────────────────────────────────────────────
 const BOT_CONFIGS = [
-  { name: 'zeus',     tokenEnv: 'TELEGRAM_BOT_TOKEN', target: 'zeus'     },
-  { name: 'poseidon', tokenEnv: 'POSEIDON_BOT_TOKEN', target: 'poseidon' },
-  { name: 'hades',    tokenEnv: 'HADES_BOT_TOKEN',    target: 'hades'    },
+  { name: 'zeus',     tokenEnv: 'TELEGRAM_BOT_TOKEN',    target: 'zeus',     polling: true  },
+  { name: 'poseidon', tokenEnv: 'POSEIDON_BOT_TOKEN',    target: 'poseidon', polling: false },
+  { name: 'hades',    tokenEnv: 'HADES_BOT_TOKEN',       target: 'hades',    polling: false },
 ];
 
 // ── Active bot instances (name → bot) ─────────────────────────────────────────
@@ -248,17 +248,17 @@ export function initTelegram() {
 
     let bot;
     try {
-      bot = new TelegramBot(token, { polling: true });
+      bot = new TelegramBot(token, { polling: cfg.polling !== false });
     } catch (err) {
       console.error(`[Telegram] Failed to init ${cfg.name} bot:`, err.message);
       continue;
     }
 
-    console.log(`[Telegram] ${cfg.name} bot started (polling)`);
+    console.log(`[Telegram] ${cfg.name} bot started (${cfg.polling !== false ? 'polling' : 'send-only'})`);
     activeBots.set(cfg.name, bot);
     started++;
 
-    bot.on('message', async (msg) => {
+    if (cfg.polling !== false) bot.on('message', async (msg) => {
       const userId  = msg.from?.id;
       const chatId  = msg.chat.id;
       const rawText = msg.text?.trim();
@@ -324,7 +324,7 @@ export function initTelegram() {
       }
     });
 
-    bot.on('polling_error', (err) => {
+    if (cfg.polling !== false) bot.on('polling_error', (err) => {
       console.error(`[Telegram] ${cfg.name} polling error:`, err.message);
     });
   }
