@@ -36,10 +36,10 @@ const NODE_ID = detectNodeId();
 
 // ── TB Bridge IP map ──────────────────────────────────────────────────────────
 const PEERS = {
-  zeus:     { ip: '10.0.0.1', port: 18800 },
-  poseidon: { ip: '10.0.0.2', port: 18800 },
-  hades:    { ip: '10.0.0.3', port: 18800 },
-  gaia:     { ip: '10.0.0.4', port: 18800 },
+  zeus:     { ip: '10.0.1.1', port: 18800 },
+  poseidon: { ip: '10.0.1.2', port: 18800 },
+  hades:    { ip: '10.0.2.2', port: 18800 },
+  gaia:     { ip: '10.0.4.1', port: 18800 },
 };
 
 const PEER_PORT = 18800;
