@@ -337,8 +337,9 @@ Do not defer to Zeus or repeat what he said. Speak from your own domain with you
   let taskAssignments = null;
   let voteRound      = 0;
 
+  const MAX_DELIBERATION_ROUNDS = 3;
   // ── Deliberation loop ─────────────────────────────────────────────────────
-  while (!approved) {
+  while (!approved && voteRound < MAX_DELIBERATION_ROUNDS) {
     voteRound++;
     console.log(`[B3C] Vote round ${voteRound}`);
 
@@ -383,6 +384,14 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
       broadcast({ type: 'council_message', id: requestId, council: 'initial', speaker: 'hades',    text: hadRound });
       councilHistory += `\n\n--- Round ${voteRound} ---\nZEUS:\n${zeusVote}\n\nPOSEIDON:\n${posRound}\n\nHADES:\n${hadRound}`;
     }
+  }
+
+  // Circuit breaker: force approval if max deliberation rounds reached
+  if (!approved) {
+    console.log("[pipeline] Circuit breaker engaged — max deliberation rounds reached. Forcing approval.");
+    approved = true;
+    taskAssignments = taskAssignments || "Each member should produce a complete work product covering their primary domain.";
+    broadcast({ type: "council_message", id: requestId, council: "initial", speaker: "zeus", text: "Circuit breaker: max deliberation rounds reached. Proceeding to execution.", vote: "approve" });
   }
 
   // ── Parallel execution ────────────────────────────────────────────────────
@@ -430,9 +439,12 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
 
   let pool = { zeus: zeusWork, poseidon: poseidonWork, hades: hadesWork };
   let backendApproved = false;
+  let backendRound = 0;
+  const MAX_BACKEND_ROUNDS = 2;
   let finalOutput     = null;
 
-  while (!backendApproved) {
+  while (!backendApproved && backendRound < MAX_BACKEND_ROUNDS) {
+    backendRound++;
     const zeusRevRes = await callSafe(requestId, 'zeus', 'review', () => callZeus(
       `You are Zeus, facilitating the Backend B3C Council review.
 
@@ -566,6 +578,20 @@ Synthesize all available domain deliverables into a single coherent, integrated 
       if (hadRev.ok)  { pool.hades    = hadRev.result;  broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'hades',    text: 'Revision submitted.' }); }
       if (zeusRev.ok) { pool.zeus     = zeusRev.result; broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'zeus',     text: 'Revision submitted.' }); }
     }
+  }
+
+  // Circuit breaker: force synthesis if backend council did not approve within max rounds
+  if (!backendApproved) {
+    console.log("[pipeline] Mission complete — circuit breaker engaged. Backend council max rounds reached. Forcing synthesis.");
+    const synthCtx = deliverableContext({ zeus: pool.zeus, poseidon: pool.poseidon, hades: pool.hades }, execFailures);
+    const synthRes = await callSafe(requestId, "zeus", "synthesis", () => callZeus(
+      `You are Zeus. The backend council has reached its maximum review rounds. Synthesize the best available deliverables into a final response now.\n\nUSER REQUEST: ${userInput}\n\n${synthCtx}\n\nDeliver a complete, authoritative response from whatever is available.`,
+      requestId
+    ));
+    finalOutput = synthRes.ok
+      ? synthRes.result
+      : pool.zeus || pool.poseidon || pool.hades || "Pipeline circuit breaker: synthesis fallback.";
+    broadcast({ type: "council_message", id: requestId, council: "backend", speaker: "zeus", text: "Circuit breaker: max review rounds reached. Synthesizing available work.", vote: "approve" });
   }
 
   const t3Elapsed = Date.now() - start;
