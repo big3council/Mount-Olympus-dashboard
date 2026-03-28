@@ -152,6 +152,11 @@ const styles = `
     0%, 100% { opacity: 0.5; }
     50%      { opacity: 1; }
   }
+  .olympus-agent-logo {
+    width: 20px; height: 20px; border-radius: 50%;
+    object-fit: cover; flex-shrink: 0;
+    opacity: 0.85;
+  }
   .olympus-agent-name {
     font-family: "Cinzel", serif;
     font-size: 9px; letter-spacing: 0.15em;
@@ -398,6 +403,7 @@ export default function OlympusView() {
             const { state, phase } = agentStates[agent];
             return (
               <div key={agent} className="olympus-agent-card" data-state={state}>
+                <img className="olympus-agent-logo" src={`/agents/${agent}/logo.svg`} alt={agent} onError={(e) => e.target.style.display="none"} />
                 <div className="olympus-agent-dot" data-state={state} />
                 <div className="olympus-agent-name" data-agent={agent}>{agent}</div>
                 <div className="olympus-agent-state">{state}{phase ? ` · ${phase}` : ""}</div>

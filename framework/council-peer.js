@@ -9,6 +9,8 @@
  * OpenClaw session and routes the reply back to the sender. Gaia logs all
  * traffic but does not respond intelligently.
  *
+ * Phase 2: Per-type message routing, parallel broadcast, presence heartbeat.
+ *
  * Auto-detects NODE_ID from hostname.
  * Can run standalone (Poseidon/Hades/Gaia) or imported by server.js (Zeus).
  */
@@ -48,10 +50,14 @@ const peerConnections = {};  // { nodeId: WebSocket } — outbound client connec
 const inboundConnections = {}; // { nodeId: WebSocket } — inbound server connections (fallback)
 const peerStatus = {};       // { nodeId: 'connected' | 'disconnected' | 'connecting' }
 const messageHandlers = [];  // registered handler functions
+const presenceMap = {};      // { nodeId: { status, load, lastSeen } }
 
 // Initialize status
 for (const id of Object.keys(PEERS)) {
-  if (id !== NODE_ID) peerStatus[id] = 'disconnected';
+  if (id !== NODE_ID) {
+    peerStatus[id] = 'disconnected';
+    presenceMap[id] = { status: 'unknown', load: null, lastSeen: null };
+  }
 }
 
 // ── Logging ───────────────────────────────────────────────────────────────────
@@ -81,6 +87,38 @@ try {
   log(`WARNING: Could not load OpenClaw token: ${e.message}`);
 }
 
+// ── Quorum IP map (all 12 members, LAN addresses) ────────────────────────────
+const QUORUM_IPS = {
+  hermes: '192.168.1.102', athena: '192.168.1.189',
+  apollo: '192.168.1.170', hestia: '192.168.1.105',
+  aphrodite: '192.168.1.123', iris: '192.168.1.117',
+  demeter: '192.168.1.113', prometheus: '192.168.1.131',
+  hephaestus: '192.168.1.156', nike: '192.168.1.165',
+  artemis: '192.168.1.152', ares: '192.168.1.182',
+};
+const QUORUM_TOKEN = 'b67accb237fdc708bc216bcf283ae3948ed84c3b5d9fc673';
+const QUORUM_PORT = 18789;
+
+// Which quorum members belong to which council head
+const QUORUM_OWNERSHIP = {
+  zeus: ['hermes', 'athena', 'apollo', 'hestia'],
+  poseidon: ['aphrodite', 'iris', 'demeter', 'prometheus'],
+  hades: ['hephaestus', 'nike', 'artemis', 'ares'],
+};
+
+// ── NAS log path for intel messages ───────────────────────────────────────────
+const INTEL_LOG_DIR = '/Volumes/olympus/shared/council-log';
+
+function logIntelToNAS(msg) {
+  try {
+    if (!fs.existsSync(INTEL_LOG_DIR)) fs.mkdirSync(INTEL_LOG_DIR, { recursive: true });
+    const filename = `intel-${msg.from}-${Date.now()}.json`;
+    fs.writeFileSync(path.join(INTEL_LOG_DIR, filename), JSON.stringify(msg, null, 2));
+  } catch (e) {
+    err(`Failed to log intel to NAS: ${e.message}`);
+  }
+}
+
 // ── Message construction ──────────────────────────────────────────────────────
 function buildMessage(to, type, body, sessionRef = null) {
   return JSON.stringify({
@@ -106,9 +144,14 @@ function forwardToGaia(originalMsg, reply) {
   }), originalMsg.session_ref);
 }
 
+// ── Per-type message routing (Phase 2 Feature 1) ─────────────────────────────
+
 async function processInboundMessage(msg) {
   // Never respond to ack or response types (prevents infinite loops)
   if (msg.type === 'ack' || msg.type === 'response') return;
+
+  // Presence is handled inline in handleInbound — skip AI processing
+  if (msg.type === 'presence') return;
 
   // Gaia is observer only — log everything, respond to nothing
   if (NODE_ID === 'gaia') {
@@ -116,8 +159,45 @@ async function processInboundMessage(msg) {
     return;
   }
 
-  // Intel type is for Gaia forwarding — don't process on non-Gaia nodes
-  if (msg.type === 'intel') return;
+  // ── Type-specific routing ──
+
+  // vote — lightweight, just log and ack, no AI
+  if (msg.type === 'vote') {
+    log(`[vote] from ${msg.from}: ${(msg.body || '').slice(0, 120)}`);
+    forwardToGaia(msg, null);
+    return;
+  }
+
+  // flag — surface to Telegram immediately, do not queue
+  if (msg.type === 'flag') {
+    log(`[FLAG] from ${msg.from}: ${msg.body}`);
+    // TODO: Telegram integration — for now log prominently
+    console.warn(`🚩 FLAG from ${msg.from}: ${msg.body}`);
+    forwardToGaia(msg, null);
+    return;
+  }
+
+  // alert — surface to Telegram with priority
+  if (msg.type === 'alert') {
+    log(`[ALERT] from ${msg.from}: ${msg.body}`);
+    console.warn(`🚨 ALERT from ${msg.from}: ${msg.body}`);
+    forwardToGaia(msg, null);
+    return;
+  }
+
+  // intel — log to NAS, do not invoke AI
+  if (msg.type === 'intel') {
+    log(`[intel] from ${msg.from} — logging to NAS`);
+    logIntelToNAS(msg);
+    return;
+  }
+
+  // broadcast — log and ack, no AI
+  if (msg.type === 'broadcast') {
+    log(`[broadcast] from ${msg.from}: ${(msg.body || '').slice(0, 120)}`);
+    forwardToGaia(msg, null);
+    return;
+  }
 
   // Health check — fast JSON response, no LLM
   if (msg.type === 'health') {
@@ -126,6 +206,7 @@ async function processInboundMessage(msg) {
       node: NODE_ID,
       uptime: process.uptime(),
       peers: { ...peerStatus },
+      presence: { ...presenceMap },
       ai_bridge: LOCAL_OPENCLAW_TOKEN ? 'armed' : 'no_token',
       timestamp: new Date().toISOString(),
     };
@@ -134,7 +215,212 @@ async function processInboundMessage(msg) {
     return;
   }
 
-  // LLM response for: coordination, deliberation, alert, artifact
+  // ── task.dispatch — Route task to quorum member via their gateway ─────────
+  if (msg.type === 'task.dispatch') {
+    let payload;
+    try {
+      payload = typeof msg.body === 'string' ? JSON.parse(msg.body) : msg.body;
+    } catch (e) {
+      sendMessage(msg.from, 'task.error', JSON.stringify({
+        error: 'Invalid task.dispatch payload', detail: e.message
+      }), msg.id);
+      return;
+    }
+
+    const { task_id, target_agent, spec, domain_fit, contribution_type,
+            council_head, timeout_seconds, require_evidence, project } = payload;
+
+    // Validate target agent exists
+    const agentIp = QUORUM_IPS[target_agent];
+    if (!agentIp) {
+      sendMessage(msg.from, 'task.error', JSON.stringify({
+        task_id, error: `Unknown agent: ${target_agent}`
+      }), msg.id);
+      return;
+    }
+
+    // Check if target is in our quorum (if not, forward to correct council node)
+    const ownerNode = Object.entries(QUORUM_OWNERSHIP)
+      .find(([_, members]) => members.includes(target_agent))?.[0];
+
+    if (ownerNode && ownerNode !== NODE_ID) {
+      // Forward to the correct council node
+      log(`[task.dispatch] ${target_agent} belongs to ${ownerNode}, forwarding`);
+      sendMessage(ownerNode, 'task.dispatch', typeof msg.body === 'string' ? msg.body : JSON.stringify(msg.body), msg.id);
+      sendMessage(msg.from, 'task.ack', JSON.stringify({
+        task_id, target_agent, status: 'forwarded', forwarded_to: ownerNode
+      }), msg.id);
+      return;
+    }
+
+    // Immediate ACK — tell sender we're processing
+    log(`[task.dispatch] Dispatching ${task_id} to ${target_agent} (${agentIp})`);
+    const fitSummaryAck = (domain_fit || '').split(/[.!?]/)[0].split(/\s+/).slice(0, 20).join(' ');
+    sendMessage(msg.from, 'task.ack', JSON.stringify({
+      task_id, target_agent, project: project || null,
+      domain_fit_summary: fitSummaryAck,
+      council_head: council_head || msg.from,
+      status: 'dispatching'
+    }), msg.id);
+
+    // Build the system prompt with task context
+    const systemPrompt = [
+      `You are ${target_agent}. You have received a task from your council head ${council_head || msg.from}.`,
+      `Project: ${project || 'unspecified'}`,
+      domain_fit ? `Why you: ${domain_fit}` : '',
+      `Task type: ${contribution_type || 'production'}`,
+      require_evidence
+        ? 'IMPORTANT: Your response MUST include: (1) what you produced, and (2) one observation from your domain perspective that the spec did not ask for.'
+        : '',
+    ].filter(Boolean).join('\n');
+
+    // Dispatch to quorum member's OpenClaw gateway (with retry-on-529)
+    async function dispatchToQuorum(retryCount = 0) {
+      const controller = new AbortController();
+      const timeoutMs = (timeout_seconds || 120) * 1000;
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+      try {
+        const response = await fetch(`http://${agentIp}:${QUORUM_PORT}/v1/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${QUORUM_TOKEN}`,
+            'x-openclaw-session-key': `quorum-${target_agent}-dispatch`,
+          },
+          body: JSON.stringify({
+            model: 'openclaw',
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: spec },
+            ],
+            stream: false,
+          }),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timer);
+
+        // Retry once on provider overload (529)
+        if (response.status === 529 && retryCount < 1) {
+          log(`[task.dispatch] Provider overloaded (529), retrying ${target_agent} in 10s...`);
+          await new Promise(r => setTimeout(r, 10000));
+          return dispatchToQuorum(retryCount + 1);
+        }
+
+        if (!response.ok) {
+          const errBody = await response.text();
+          throw new Error(`Gateway HTTP ${response.status}: ${errBody.slice(0, 200)}`);
+        }
+
+        const data = await response.json();
+        const reply = data.choices?.[0]?.message?.content || '';
+
+        // Generate domain_fit_summary (first sentence, max 20 words)
+        const fitSummary = (domain_fit || '').split(/[.!?]/)[0].split(/\s+/).slice(0, 20).join(' ');
+        
+        // Generate preview (first 150 chars of response, markdown stripped)
+        const preview = (reply || '').replace(/[#*_`~\[\]]/g, '').slice(0, 150).trim();
+
+        log(`[task.dispatch] ✓ ${target_agent} responded (${reply.length} chars)${retryCount > 0 ? ' [after retry]' : ''}`);
+
+        sendMessage(msg.from, 'task.result', JSON.stringify({
+          task_id,
+          target_agent,
+          project: project || null,
+          response: reply,
+          domain_fit_summary: fitSummary,
+          preview,
+          status: reply ? 'completed' : 'empty',
+          retried: retryCount > 0,
+          timestamp: new Date().toISOString(),
+        }), msg.id);
+
+        forwardToGaia(msg, reply);
+
+      } catch (e) {
+        clearTimeout(timer);
+        const isTimeout = e.name === 'AbortError';
+        log(`[task.dispatch] ✗ ${target_agent} failed: ${e.message}${retryCount > 0 ? ' [after retry]' : ''}`);
+
+        sendMessage(msg.from, 'task.error', JSON.stringify({
+          task_id,
+          target_agent,
+          error: isTimeout ? `Timeout after ${timeout_seconds || 120}s` : e.message,
+          timeout: isTimeout,
+          retried: retryCount > 0,
+          timestamp: new Date().toISOString(),
+        }), msg.id);
+
+        forwardToGaia(msg, null);
+      }
+    }
+
+    await dispatchToQuorum();
+
+    return;
+  }
+
+  // ── task.result — Auto-write completion evidence to task.json on NAS ──────
+  if (msg.type === 'task.result') {
+    try {
+      const result = typeof msg.body === 'string' ? JSON.parse(msg.body) : msg.body;
+      const { task_id, target_agent, project, response, status: resultStatus } = result;
+
+      if (task_id && project) {
+        const NAS_PROJECTS = '/Volumes/olympus/shared/projects';
+        const statusDirs = ['active', 'review', 'completed', 'blocked'];
+        let taskFile = null;
+
+        for (const dir of statusDirs) {
+          const candidate = path.join(NAS_PROJECTS, project, 'tasks', dir, `${task_id}.json`);
+          if (fs.existsSync(candidate)) {
+            taskFile = candidate;
+            break;
+          }
+        }
+
+        if (taskFile) {
+          const task = JSON.parse(fs.readFileSync(taskFile, 'utf-8'));
+          task.completion = task.completion || {};
+          task.completion.completed_at = new Date().toISOString();
+          task.completion.completed_by = target_agent || msg.from;
+          task.completion.evidence = response || null;
+          task.status = 'pending_acceptance';
+          task.updated = new Date().toISOString();
+          fs.writeFileSync(taskFile, JSON.stringify(task, null, 2));
+
+          // Move to review directory if currently in active
+          if (taskFile.includes('/active/')) {
+            const reviewDir = path.join(NAS_PROJECTS, project, 'tasks', 'review');
+            if (!fs.existsSync(reviewDir)) fs.mkdirSync(reviewDir, { recursive: true });
+            const newPath = path.join(reviewDir, `${task_id}.json`);
+            fs.renameSync(taskFile, newPath);
+            log(`[task.result] Moved ${task_id} to review/`);
+          }
+
+          log(`[task.result] Auto-wrote completion evidence for ${task_id} from ${target_agent}`);
+        } else {
+          log(`[task.result] WARNING: Could not find task file for ${task_id} in project ${project}`);
+        }
+      }
+    } catch (e) {
+      err(`[task.result] Failed to write completion evidence: ${e.message}`);
+    }
+    forwardToGaia(msg, null);
+    return;
+  }
+
+  // ── task.ack / task.error — Log but do not invoke AI ──────────────────────
+  if (msg.type === 'task.ack' || msg.type === 'task.error') {
+    log(`[${msg.type}] ${(msg.body || '').slice(0, 120)}`);
+    forwardToGaia(msg, null);
+    return;
+  }
+
+
+  // ── Full AI bridge for: deliberation_request, coordination, artifact, etc. ──
+
   if (!LOCAL_OPENCLAW_TOKEN) {
     log(`Cannot process ${msg.type} — no OpenClaw token`);
     forwardToGaia(msg, null);
@@ -142,8 +428,6 @@ async function processInboundMessage(msg) {
   }
 
   try {
-    // System prompt removed — OpenClaw injects workspace files (SOUL.md, AGENTS.md, etc.)
-
     const response = await fetch(`http://${MY_IP}:18789/v1/chat/completions`, {
       method: 'POST',
       headers: {
@@ -286,6 +570,21 @@ function handleInbound(msg, ws) {
     inboundConnections[from] = ws;
   }
 
+  // Presence heartbeat — update presenceMap silently, no ack, no log spam
+  if (type === 'presence') {
+    try {
+      const data = typeof body === 'string' ? JSON.parse(body) : body;
+      presenceMap[from] = {
+        status: data.status || 'active',
+        load: data.load ?? null,
+        lastSeen: new Date().toISOString(),
+      };
+    } catch (e) {
+      presenceMap[from] = { status: 'active', load: null, lastSeen: new Date().toISOString() };
+    }
+    return; // No ack, no logging, no AI processing for presence
+  }
+
   log(`← ${type} from ${from}: ${(body || '').slice(0, 80)}${body?.length > 80 ? '...' : ''}`);
 
   // Run registered handlers
@@ -293,13 +592,56 @@ function handleInbound(msg, ws) {
     try { handler(msg); } catch (e) { err(`Handler error: ${e.message}`); }
   }
 
-  // Auto-ack non-ack messages
-  if (type !== 'ack' && type !== 'response' && ws?.readyState === WebSocket.OPEN) {
+  // Auto-ack non-ack messages (skip broadcast — already lightweight)
+  if (type !== 'ack' && type !== 'response' && type !== 'broadcast' && ws?.readyState === WebSocket.OPEN) {
     ws.send(buildMessage(from, 'ack', `Received ${type} id=${id}`));
   }
 
-  // AI Bridge — process message intelligently
+  // AI Bridge — process message intelligently per type
   processInboundMessage(msg).catch(e => err(`AI bridge error: ${e.message}`));
+}
+
+// ── Presence Heartbeat (Phase 2 Feature 3) ────────────────────────────────────
+
+let presenceInterval = null;
+
+function getCpuLoad() {
+  const cpus = os.cpus();
+  let totalIdle = 0, totalTick = 0;
+  for (const cpu of cpus) {
+    for (const type in cpu.times) totalTick += cpu.times[type];
+    totalIdle += cpu.times.idle;
+  }
+  return +(1 - totalIdle / totalTick).toFixed(2);
+}
+
+function startPresenceHeartbeat() {
+  presenceInterval = setInterval(() => {
+    const payload = JSON.stringify({
+      status: 'active',
+      load: getCpuLoad(),
+      timestamp: new Date().toISOString(),
+    });
+    for (const peerId of Object.keys(PEERS)) {
+      if (peerId !== NODE_ID) {
+        sendMessage(peerId, 'presence', payload);
+      }
+    }
+  }, 30000);
+
+  // Mark peers as unknown if no presence received in 90 seconds
+  setInterval(() => {
+    const now = Date.now();
+    for (const peerId of Object.keys(presenceMap)) {
+      const entry = presenceMap[peerId];
+      if (entry.lastSeen && (now - new Date(entry.lastSeen).getTime() > 90000)) {
+        if (entry.status !== 'unknown') {
+          presenceMap[peerId].status = 'unknown';
+          log(`Presence timeout: ${peerId} marked as unknown`);
+        }
+      }
+    }
+  }, 15000);
 }
 
 // ── Public API ────────────────────────────────────────────────────────────────
@@ -313,24 +655,35 @@ export function sendMessage(to, type, body, sessionRef = null) {
     via = 'inbound';
   }
   if (!conn || conn.readyState !== WebSocket.OPEN) {
-    err(`Cannot send to ${to} — no route (outbound: ${peerStatus[to] || 'unknown'}, inbound: ${inboundConnections[to] ? 'stale' : 'none'})`);
+    // Don't spam errors for presence pings to disconnected peers
+    if (type !== 'presence') {
+      err(`Cannot send to ${to} — no route (outbound: ${peerStatus[to] || 'unknown'}, inbound: ${inboundConnections[to] ? 'stale' : 'none'})`);
+    }
     return false;
   }
   const msg = buildMessage(to, type, body, sessionRef);
   conn.send(msg);
-  log(`→ ${type} to ${to} [${via}]: ${(body || '').slice(0, 80)}${body?.length > 80 ? '...' : ''}`);
+  // Don't log presence pings — too noisy
+  if (type !== 'presence') {
+    log(`→ ${type} to ${to} [${via}]: ${(body || '').slice(0, 80)}${body?.length > 80 ? '...' : ''}`);
+  }
   return true;
 }
 
-export function broadcastMessage(type, body, sessionRef = null) {
-  let sent = 0;
-  for (const peerId of Object.keys(PEERS)) {
-    if (peerId !== NODE_ID) {
-      if (sendMessage(peerId, type, body, sessionRef)) sent++;
-    }
-  }
-  log(`Broadcast ${type} to ${sent}/${Object.keys(PEERS).length - 1} peers`);
-  return sent;
+// Phase 2 Feature 2 — True simultaneous broadcast with Promise.all
+export async function broadcastMessage(type, body, sessionRef = null) {
+  const peers = Object.keys(PEERS).filter(id => id !== NODE_ID);
+  const results = await Promise.all(
+    peers.map(peerId => {
+      return new Promise((resolve) => {
+        const sent = sendMessage(peerId, type, body, sessionRef);
+        resolve({ peerId, sent });
+      });
+    })
+  );
+  const sent = results.filter(r => r.sent).length;
+  log(`Broadcast ${type} to ${sent}/${peers.length} peers (parallel)`);
+  return { sent, total: peers.length, results };
 }
 
 export function getPeerStatus() {
@@ -339,9 +692,17 @@ export function getPeerStatus() {
     ip:   MY_IP,
     port: PEER_PORT,
     peers: { ...peerStatus },
+    presence: { ...presenceMap },
     ai_bridge: LOCAL_OPENCLAW_TOKEN ? 'armed' : 'no_token',
     timestamp: new Date().toISOString(),
   };
+}
+
+export function getPresence(peerId) {
+  if (peerId === NODE_ID) {
+    return { status: 'self', load: getCpuLoad(), lastSeen: new Date().toISOString() };
+  }
+  return presenceMap[peerId] || { status: 'unknown', load: null, lastSeen: null };
 }
 
 export function onMessage(handler) {
@@ -354,12 +715,27 @@ export function initPeerLayer() {
   startServer();
   // Delay client connections slightly to let servers start
   setTimeout(connectToAllPeers, 3000);
+  // Start presence heartbeat after connections are established
+  setTimeout(startPresenceHeartbeat, 5000);
 }
 
-// ── Auto-start when run standalone ────────────────────────────────────────────
-// Detect if this is the main module (ESM)
-const isMain = process.argv[1]?.endsWith('council-peer.js');
+// ── Auto-start when run standalone or under PM2 ──────────────────────────────
+// ESM: use import.meta.url. PM2 wraps argv[1], so also check PM2_HOME.
+const isMain = process.argv[1]?.endsWith('council-peer.js') ||
+               import.meta.url.endsWith('council-peer.js') ||
+               !!process.env.PM2_HOME;
 if (isMain) {
+  // Process guard — kill stale instances before starting
+  const { execSync } = await import('child_process');
+  try {
+    const stale = execSync(`pgrep -f "node.*council-peer.js" 2>/dev/null || true`, { encoding: 'utf-8' })
+      .trim().split('\n').filter(pid => pid && parseInt(pid) !== process.pid);
+    if (stale.length > 0) {
+      log(`Killing ${stale.length} stale council-peer process(es): ${stale.join(', ')}`);
+      stale.forEach(pid => { try { process.kill(parseInt(pid)); } catch {} });
+    }
+  } catch {}
+
   log('Running standalone');
   initPeerLayer();
 }
