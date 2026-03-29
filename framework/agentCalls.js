@@ -31,14 +31,10 @@ const AGENT_CONFIGS = {
 const GAIA_COMPLETIONS_URL = 'http://10.0.4.1:18789/v1/chat/completions';
 const GAIA_TOKEN           = process.env.GAIA_OPENCLAW_TOKEN;
 
-// Stable session IDs — one per agent so OpenClaw reuses the same session
-// instead of spawning a new one on every call.
-const SESSION_KEYS = {
-  zeus:     'framework-zeus-internal',
-  poseidon: 'framework-poseidon-internal',
-  hades:    'framework-hades-internal',
-  gaia:     'framework-gaia-internal',
-};
+// Per-call session IDs to avoid gateway lane queue serialization.
+function sessionKey(name) {
+  return `framework-${name}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
 
 // ── Quorum Routing ────────────────────────────────────────────────────────────
 // All Sparks are accessed from Zeus via device pairing (Zeus device 4bfb92...).
@@ -88,7 +84,7 @@ async function callAgent(name, url, token, message) {
         'Content-Type':           'application/json',
         'Authorization':          `Bearer ${token}`,
         'x-openclaw-scopes':       'operator.write',
-        'x-openclaw-session-key': SESSION_KEYS[name] ?? `b3c-${name}`,
+        'x-openclaw-session-key': sessionKey(name),
       },
       body: JSON.stringify({ model: 'openclaw', messages: [{ role: 'user', content: message }], stream: false }),
     });
@@ -145,7 +141,7 @@ export async function callQuorumAgent(councilHead, agentName, message) {
 
   const { ip } = agent || QUORUM_AGENTS[agentName];
   const url = `http://${ip}:18789/v1/chat/completions`;
-  const sessionKey = `framework-${agentName}-internal`;
+  const quorumSessionKey = `framework-${agentName}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
   let res;
   try {
@@ -155,7 +151,7 @@ export async function callQuorumAgent(councilHead, agentName, message) {
         'Content-Type':           'application/json',
         'Authorization':          `Bearer ${QUORUM_TOKEN}`,
         'x-openclaw-scopes':       'operator.write',
-        'x-openclaw-session-key': sessionKey,
+        'x-openclaw-session-key': quorumSessionKey,
       },
       body: JSON.stringify({
         model: 'openclaw',
@@ -241,7 +237,7 @@ export async function callGaia(message, _requestId, conversationMessages = null)
       'Content-Type':           'application/json',
       'Authorization':          `Bearer ${GAIA_TOKEN}`,
       'x-openclaw-scopes':       'operator.write',
-      'x-openclaw-session-key': SESSION_KEYS.gaia,
+      'x-openclaw-session-key': sessionKey("gaia"),
     },
     body: JSON.stringify({ model: 'openclaw', messages, stream: false }),
   });
