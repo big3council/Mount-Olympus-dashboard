@@ -1,7 +1,7 @@
 /**
  * gaia-ssh-service.js — Gaia's SSH Control Service
  *
- * Runs on Gaia's machine (100.74.201.75) on port 18790.
+ * Runs on Gaia's machine (192.168.1.14) on port 18790.
  * Accepts POST /ssh-control from the Zeus framework and executes SSH commands
  * locally using Gaia's own keypair (~/.ssh/id_ed25519).
  *
@@ -26,9 +26,9 @@ const LOG_FILE = path.join(os.homedir(), 'olympus', 'gaia', 'ssh-control.log');
 const TOKEN    = process.env.GAIA_SSH_SERVICE_TOKEN ?? '';
 
 const VALID_NODES = {
-  zeus:     'zeus@100.78.126.27',
-  poseidon: 'poseidon@100.114.203.41',
-  hades:    'hades@100.68.217.82',
+  zeus:     'zeus@192.168.1.11',
+  poseidon: 'poseidon@192.168.1.12',
+  hades:    'hades@192.168.1.13',
 };
 
 function writeLog(entry) {
