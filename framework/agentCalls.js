@@ -87,9 +87,10 @@ async function callAgent(name, url, token, message) {
       headers: {
         'Content-Type':           'application/json',
         'Authorization':          `Bearer ${token}`,
+        'x-openclaw-scopes':       'operator.write',
         'x-openclaw-session-key': SESSION_KEYS[name] ?? `b3c-${name}`,
       },
-      body: JSON.stringify({ model: 'main', messages: [{ role: 'user', content: message }], stream: false }),
+      body: JSON.stringify({ model: 'openclaw', messages: [{ role: 'user', content: message }], stream: false }),
     });
   } catch (err) {
     const msg = err.message || '';
@@ -153,6 +154,7 @@ export async function callQuorumAgent(councilHead, agentName, message) {
       headers: {
         'Content-Type':           'application/json',
         'Authorization':          `Bearer ${QUORUM_TOKEN}`,
+        'x-openclaw-scopes':       'operator.write',
         'x-openclaw-session-key': sessionKey,
       },
       body: JSON.stringify({
@@ -238,9 +240,10 @@ export async function callGaia(message, _requestId, conversationMessages = null)
     headers: {
       'Content-Type':           'application/json',
       'Authorization':          `Bearer ${GAIA_TOKEN}`,
+      'x-openclaw-scopes':       'operator.write',
       'x-openclaw-session-key': SESSION_KEYS.gaia,
     },
-    body: JSON.stringify({ model: 'main', messages, stream: false }),
+    body: JSON.stringify({ model: 'openclaw', messages, stream: false }),
   });
 
   if (!res.ok) {
