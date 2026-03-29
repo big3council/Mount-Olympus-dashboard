@@ -29,11 +29,11 @@ const COUNCIL_LOG_FILE   = path.join(os.homedir(), 'olympus', 'gaia', 'council-l
 const RETROSPECTIVES_FILE = path.join(os.homedir(), 'olympus', 'gaia', 'retrospectives.json');
 const SSH_CONTROL_LOG    = path.join(os.homedir(), 'olympus', 'gaia', 'ssh-control.log');
 
-// ── SSH node map ───────────────────────────────────────────────────────────────
+// ── SSH node map — LAN IPs (primary, ~0.4ms) ───────────────────────────────────
 const SSH_NODE_IPS = {
-  zeus:     '100.78.126.27',
-  poseidon: '100.114.203.41',
-  hades:    '100.68.217.82',
+  zeus:     '10.0.1.1',
+  poseidon: '10.0.1.2',
+  hades:    '10.0.2.2',
 };
 
 // ── Observer mesh — append mission transcript to daily observation file ────────
@@ -321,7 +321,7 @@ export async function executeSSHControl(node, command, reason) {
   try {
     const controller = new AbortController();
     const timer      = setTimeout(() => controller.abort(), 35000);
-    const res = await fetch('http://100.74.201.75:18790/ssh-control', {
+    const res = await fetch('http://10.0.4.1:18790/ssh-control', {
       method:  'POST',
       headers,
       body:    JSON.stringify({ node, command, reason }),

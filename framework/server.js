@@ -10,12 +10,16 @@ import http from 'http';
 import fs   from 'fs';
 import path from 'path';
 import os   from 'os';
+import crypto from 'crypto';
 import express from 'express';
 import { WebSocket } from 'ws';
 import { initWS, broadcast } from './olympus-ws.js';
 import { enqueue, cancelMission, getQueue } from './queue.js';
 import { initTelegram } from './telegram.js';
 import { initGaia, runDirectGaia, gaiaInitiateCouncil, observeMission, executeSSHControl } from './gaia.js';
+import { initPeerLayer, getPeerStatus, getPresence } from "./council-peer.js";
+import dashboardRoutes from "./dashboard-routes.js";
+import logoRoute from "./agent-logo-route.js";
 
 const PORT = 18780;
 
@@ -73,6 +77,9 @@ loadGaiaConvs();
 const app = express();
 app.use(express.json());
 
+// ── Serve dashboard from dist ─────────────────────────────────────────────────
+app.use(express.static(new URL("../dashboard/dist", import.meta.url).pathname));
+
 // ── CORS ──────────────────────────────────────────────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -128,6 +135,24 @@ app.get('/queue', (_req, res) => {
 });
 
 // ── Health ────────────────────────────────────────────────────────────────────
+
+// ── Peer status ───────────────────────────────────────────────────────────────
+app.get("/peer-status", (_req, res) => {
+  res.json(getPeerStatus());
+});
+
+app.get("/peer-presence", (req, res) => {
+  const peerId = req.query.peer;
+  if (peerId) {
+    res.json(getPresence(peerId));
+  } else {
+    const PEERS = ["zeus", "poseidon", "hades", "gaia"];
+    const all = {};
+    for (const p of PEERS) all[p] = getPresence(p);
+    res.json(all);
+  }
+});
+
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'olympus-framework', ts: Date.now() });
 });
@@ -189,13 +214,31 @@ app.get('/gaia/council', (_req, res) => {
 app.get('/gaia/retrospectives', (_req, res) => {
   const retrosFile = path.join(os.homedir(), 'olympus', 'gaia', 'retrospectives.json');
   try {
+    let existingEntries = [];
     if (fs.existsSync(retrosFile)) {
-      const retros = JSON.parse(fs.readFileSync(retrosFile, 'utf8'));
-      res.json(retros.slice(-10)); // last 10
-    } else {
-      res.json([]);
+      existingEntries = JSON.parse(fs.readFileSync(retrosFile, 'utf8'));
     }
-  } catch { res.json([]); }
+    // Merge NAS .md retrospectives (canonical write destination going forward)
+    const nasRetroDir = '/Volumes/olympus/gaia/retrospectives';
+    if (fs.existsSync(nasRetroDir)) {
+      const mdFiles = fs.readdirSync(nasRetroDir).filter(f => f.endsWith('.md'));
+      for (const file of mdFiles) {
+        const dateKey = file.replace('.md', '');
+        // Allow founding/special NAS entries even if a local entry exists for same date
+        const isSpecialEntry = file.includes('-founding') || file.includes('-special');
+        if (isSpecialEntry || !existingEntries.some(e => e.timestamp && e.timestamp.startsWith(dateKey.substring(0,10)))) {
+          existingEntries.push({
+            timestamp: `${dateKey.substring(0,10)}T23:00:00.000Z`,
+            text: fs.readFileSync(path.join(nasRetroDir, file), 'utf-8'),
+            missions_reviewed: 0,
+            source: 'nas'
+          });
+        }
+      }
+      existingEntries.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    }
+    res.json(existingEntries.slice(0, 15));
+  } catch (e) { res.json([]); }
 });
 
 // ── Gaia observer mesh — receive full mission transcript ──────────────────────
@@ -253,6 +296,7 @@ app.post('/gaia/message', (req, res) => {
 });
 
 // ── Health proxy (CORS-safe) ──────────────────────────────────────────────────
+
 app.get('/proxy/health', async (req, res) => {
   const { target } = req.query;
   if (!target) return res.status(400).json({ error: 'target required' });
@@ -271,10 +315,26 @@ app.get('/proxy/health', async (req, res) => {
   }
 });
 
-// ── Gaia OpenClaw poller ──────────────────────────────────────────────────────
-const GAIA_WS_URL   = 'ws://100.74.201.75:18789';
+// ── Gaia OpenClaw poller (with device auth) ───────────────────────────────────
+const GAIA_WS_URL   = 'ws://10.0.4.1:18789';
 const GAIA_TOKEN    = process.env.GAIA_OPENCLAW_TOKEN;
 const POLL_INTERVAL = 30_000;
+
+// Load device identity for authenticated polling
+const PROBE_IDENTITY_DIR = new URL('.probe-identity/', import.meta.url).pathname;
+let PROBE_PRIVATE_KEY = null;
+let PROBE_DEVICE_ID = '';
+let PROBE_PUB_B64URL = '';
+try {
+  const privPem = fs.readFileSync(path.join(PROBE_IDENTITY_DIR, 'private.pem'), 'utf8');
+  PROBE_PRIVATE_KEY = crypto.createPrivateKey(privPem);
+  PROBE_DEVICE_ID = fs.readFileSync(path.join(PROBE_IDENTITY_DIR, 'device-id.txt'), 'utf8').trim();
+  PROBE_PUB_B64URL = fs.readFileSync(path.join(PROBE_IDENTITY_DIR, 'public-key-b64url.txt'), 'utf8').trim();
+} catch (e) {
+  console.warn('[Gaia Poll] No probe identity found — falling back to token-only (limited scopes)');
+}
+
+function b64url(buf) { return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, ''); }
 
 let gaiaLastSeenTs = 0;
 
@@ -307,15 +367,22 @@ function gaiaFetchHistory() {
 
     if (msg.type === 'event' && msg.event === 'connect.challenge') {
       connectId = nextId();
-      send({
-        type: 'req', id: connectId, method: 'connect',
-        params: {
-          minProtocol: 3, maxProtocol: 3,
-          client: { id: 'openclaw-probe', version: '1.0', platform: 'node', mode: 'webchat', instanceId: 'olympus-poller' },
-          role: 'operator', scopes: ['operator.admin'], caps: [],
-          auth: { token: GAIA_TOKEN },
-        },
-      });
+      const scopes = ['operator.read', 'operator.admin'];
+      const connectParams = {
+        minProtocol: 3, maxProtocol: 3,
+        client: { id: 'cli', version: '1.0', platform: 'node', mode: 'cli', instanceId: 'olympus-poller' },
+        role: 'operator', scopes, caps: [],
+        auth: { token: GAIA_TOKEN },
+      };
+      // Add device identity if available
+      if (PROBE_PRIVATE_KEY && PROBE_DEVICE_ID) {
+        const nonce = msg.payload?.nonce || '';
+        const signedAt = Date.now();
+        const payload = ['v3', PROBE_DEVICE_ID, 'cli', 'cli', 'operator', scopes.join(','), String(signedAt), GAIA_TOKEN, nonce, 'node', ''].join('|');
+        const sig = b64url(crypto.sign(null, Buffer.from(payload, 'utf8'), PROBE_PRIVATE_KEY));
+        connectParams.device = { id: PROBE_DEVICE_ID, publicKey: PROBE_PUB_B64URL, signature: sig, signedAt, nonce };
+      }
+      send({ type: 'req', id: connectId, method: 'connect', params: connectParams });
       return;
     }
 
@@ -394,6 +461,10 @@ function initGaiaPoller() {
   setInterval(gaiaFetchHistory, POLL_INTERVAL);
 }
 
+// ── Dashboard flywheel routes ────────────────────────────────────────────────
+app.use(dashboardRoutes);
+app.use(logoRoute);
+
 // ── HTTP + WebSocket server ───────────────────────────────────────────────────
 const server = http.createServer(app);
 initWS(server);
@@ -404,4 +475,5 @@ server.listen(PORT, () => {
   initTelegram();
   initGaiaPoller();
   initGaia();
+  initPeerLayer();
 });

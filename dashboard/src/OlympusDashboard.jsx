@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import OlympusView from "./OlympusView";
 
 function StarField() {
   const canvasRef = useRef(null);
@@ -743,6 +744,64 @@ const css = `
     50%       { box-shadow: 0 0 30px rgba(120,216,122,0.55), 0 0 60px rgba(120,216,122,0.2); }
   }
 
+  /* ── Top-level view toggle ──────────────────────────────────────────── */
+  .top-toggle {
+    display: flex;
+    gap: 2px;
+    background: rgba(13,18,37,0.8);
+    border: 1px solid #1a2040;
+    border-radius: 4px;
+    padding: 2px;
+  }
+  .top-toggle-btn {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: 3px;
+    border: none;
+    background: transparent;
+    color: #2a3560;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .top-toggle-btn:hover { color: #4a5580; }
+  .top-toggle-btn.active {
+    background: rgba(200,150,10,0.1);
+    color: #e8b84b;
+  }
+  .node-health-btn {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 9px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 3px;
+    border: 1px solid #1a2040;
+    background: transparent;
+    color: #2a3560;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+  }
+  .node-health-btn:hover { border-color: #2a3560; color: #4a5580; }
+  .node-health-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    background: rgba(9,12,24,0.98);
+    border: 1px solid #1a2040;
+    border-radius: 4px;
+    padding: 8px 12px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    z-index: 100;
+    animation: mode-enter 0.2s ease both;
+  }
+
   /* ── Gaia tree layout ─────────────────────────────────────────────── */
   .gaia-tree-main { flex: 1; display: flex; flex-direction: column; overflow: hidden; position: relative; }
   .gaia-canvas-center { flex: 1; overflow: hidden; position: relative; display: flex; flex-direction: column; }
@@ -1144,14 +1203,14 @@ const css = `
 `;
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-const API_URL = "http://100.78.126.27:18780";
-const WS_URL  = "ws://100.78.126.27:18780/live";
+const API_URL = `http://${window.location.hostname}:18780`;
+const WS_URL  = `ws://${window.location.hostname}:18780/live`;
 
 const NODE_HEALTH_TARGETS = {
-  ZEUS:     "http://127.0.0.1:18789",
-  POSEIDON: "http://100.114.203.41:18789",
-  HADES:    "http://100.68.217.82:18789",
-  GAIA:     "http://100.74.201.75:18789",
+  ZEUS:     "http://192.168.1.11:18789",
+  POSEIDON: "http://192.168.1.12:18789",
+  HADES:    "http://192.168.1.13:18789",
+  GAIA:     "http://192.168.1.14:18789",
 };
 
 // Map sendTarget → UI mode (used when no mission is active)
@@ -1963,6 +2022,11 @@ export default function OlympusDashboard() {
   const prevGaiaStateRef = useRef(null);
   const gaiaChatRef      = useRef(null);
 
+  // ── Top-level view state ──────────────────────────────────────────────────
+  const [topView, setTopView]               = useState("council"); // "council" | "olympus" | "record"
+  const [nodeHealthOpen, setNodeHealthOpen] = useState(false);
+  const nodeHealthRef = useRef(null);
+
   // ── Queue state ───────────────────────────────────────────────────────────
   const [queueState,         setQueueState]         = useState([]);   // full queue_update list
   const [zeusReorderNotif,   setZeusReorderNotif]   = useState(null); // { reason, ts }
@@ -2720,6 +2784,18 @@ export default function OlympusDashboard() {
       setSelectedFruit(null);
     }
   };
+
+  // ── Click-outside for node health dropdown ────────────────────────────────
+  useEffect(() => {
+    if (!nodeHealthOpen) return;
+    const handler = (e) => {
+      if (nodeHealthRef.current && !nodeHealthRef.current.contains(e.target)) {
+        setNodeHealthOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [nodeHealthOpen]);
 
   // ── Detail panel renderer (tier3) ─────────────────────────────────────────
   const renderPanel = () => {
@@ -3976,25 +4052,42 @@ export default function OlympusDashboard() {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Mode badge */}
-            <div className={`mode-badge badge-${effectiveMode}`}>
-              {gaiaMode ? "GAIA" : (MODE_BADGE_LABELS[mode] ?? mode.toUpperCase())}
-            </div>
-
-            {/* Node health chips */}
-            <div className="cluster-nodes">
-              {["ZEUS", "POSEIDON", "HADES", "GAIA"].map(n => (
-                <div key={n} className={`node-chip ${nodeHealth[n] === true ? "online" : nodeHealth[n] === false ? "offline" : ""}`}>
-                  <span className="dot" />
-                  {n}
-                </div>
+            {/* Three-mode toggle */}
+            <div className="top-toggle">
+              {["council", "olympus", "record"].map(v => (
+                <button
+                  key={v}
+                  className={`top-toggle-btn ${topView === v ? "active" : ""}`}
+                  onClick={() => {
+                    if (v === "record" && topView !== "record") {
+                      if (!gaiaMode) toggleGaiaMode();
+                    } else if (v !== "record" && gaiaMode) {
+                      toggleGaiaMode();
+                    }
+                    setTopView(v);
+                  }}
+                >{v.toUpperCase()}</button>
               ))}
             </div>
-            <button
-              className={`gaia-topbar-btn ${gaiaMode ? "gaia-active" : ""}`}
-              onClick={toggleGaiaMode}
-              title={gaiaMode ? "Return from Gaia" : "Open Gaia — Memory & Retrospective"}
-            >🌿</button>
+
+            {/* Node health dropdown trigger */}
+            <div ref={nodeHealthRef} style={{ position: "relative" }}>
+              <button
+                className="node-health-btn"
+                onClick={() => setNodeHealthOpen(o => !o)}
+              >NODE HEALTH {nodeHealthOpen ? "▴" : "▾"}</button>
+
+              {nodeHealthOpen && (
+                <div className="node-health-dropdown">
+                  {["ZEUS", "POSEIDON", "HADES", "GAIA"].map(n => (
+                    <div key={n} className={`node-chip ${nodeHealth[n] === true ? "online" : nodeHealth[n] === false ? "offline" : ""}`}>
+                      <span className="dot" />
+                      {n}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
@@ -4007,10 +4100,20 @@ export default function OlympusDashboard() {
           </div>
         </div>
 
-        {/* Mode canvas — key triggers entry animation on mode switch */}
-        <div className="main-canvas" key={effectiveMode}>
-          {renderModeView()}
-        </div>
+        {/* Mode canvas — routed by topView */}
+        {topView === "council" && (
+          <div className="main-canvas" key={effectiveMode}>
+            {renderModeView()}
+          </div>
+        )}
+
+        {topView === "olympus" && <OlympusView />}
+
+        {topView === "record" && (
+          <div className="main-canvas" key="record">
+            {renderGaiaTree()}
+          </div>
+        )}
 
         {/* Input bar */}
         <div className={`input-bar${gaiaMode ? " gaia-input-bar" : ""}`}>
