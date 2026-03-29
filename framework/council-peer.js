@@ -286,6 +286,7 @@ async function processInboundMessage(msg) {
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${QUORUM_TOKEN}`,
+            'x-openclaw-scopes':       'operator.write',
             'x-openclaw-session-key': `quorum-${target_agent}-dispatch`,
           },
           body: JSON.stringify({
@@ -433,10 +434,11 @@ async function processInboundMessage(msg) {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${LOCAL_OPENCLAW_TOKEN}`,
+        'x-openclaw-scopes':       'operator.write',
         'x-openclaw-session-key': PEER_SESSION_KEY,
       },
       body: JSON.stringify({
-        model: 'main',
+        model: 'openclaw',
         messages: [
           { role: 'user', content: `[${msg.type} from ${msg.from} — peer coordination channel, respond directly and concisely] ${msg.body}` },
         ],
