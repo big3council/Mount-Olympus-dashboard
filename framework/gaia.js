@@ -321,7 +321,7 @@ export async function executeSSHControl(node, command, reason) {
   try {
     const controller = new AbortController();
     const timer      = setTimeout(() => controller.abort(), 35000);
-    const res = await fetch('http://10.0.4.1:18790/ssh-control', {
+    const res = await fetch('http://10.0.3.2:18790/ssh-control', {
       method:  'POST',
       headers,
       body:    JSON.stringify({ node, command, reason }),

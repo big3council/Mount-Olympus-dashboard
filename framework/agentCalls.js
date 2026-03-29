@@ -14,7 +14,7 @@
  * Poseidon: http://100.114.203.41:18789
  * Hades:    http://100.68.217.82:18789
  *
- * Gaia:     http://10.0.4.1:18789   — GAIA_OPENCLAW_TOKEN
+ * Gaia:     http://10.0.3.2:18789   — GAIA_OPENCLAW_TOKEN
  *
  * Quorum Sparks (LAN only — called via Zeus device pairing):
  * Zeus quorum:     hermes, athena, apollo, hestia
@@ -28,7 +28,7 @@ const AGENT_CONFIGS = {
   hades:    { url: 'http://10.0.2.2:18789/v1/chat/completions',   tokenEnv: 'HADES_OPENCLAW_TOKEN'    },
 };
 
-const GAIA_COMPLETIONS_URL = 'http://10.0.4.1:18789/v1/chat/completions';
+const GAIA_COMPLETIONS_URL = 'http://10.0.3.2:18789/v1/chat/completions';
 const GAIA_TOKEN           = process.env.GAIA_OPENCLAW_TOKEN;
 
 // Per-call session IDs to avoid gateway lane queue serialization.
