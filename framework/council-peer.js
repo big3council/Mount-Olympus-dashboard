@@ -509,6 +509,17 @@ function connectToPeer(peerId) {
 
   if (peerConnections[peerId]?.readyState === WebSocket.OPEN) return;
 
+  // If a healthy inbound connection exists from this peer, skip the outbound
+  // dial entirely. sendMessage() already falls back to inbound, so the mesh
+  // stays functional. This prevents the retry loop that causes EHOSTUNREACH.
+  if (inboundConnections[peerId]?.readyState === WebSocket.OPEN) {
+    if (peerStatus[peerId] !== 'connected') {
+      log(`Peer ${peerId} already connected via inbound — skipping outbound dial`);
+      peerStatus[peerId] = 'connected';
+    }
+    return;
+  }
+
   peerStatus[peerId] = 'connecting';
   log(`Connecting to ${peerId} at ${url}`);
 
