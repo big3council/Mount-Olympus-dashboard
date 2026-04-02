@@ -55,14 +55,12 @@ const CONSTELLATIONS = [
 
 // Sky regions — edges and corners, never overlapping the throne chamber
 const SKY_REGIONS = [
-  { x: 0.01, y: 0.02, w: 0.28, h: 0.36 },
-  { x: 0.72, y: 0.02, w: 0.27, h: 0.36 },
-  { x: 0.01, y: 0.60, w: 0.24, h: 0.36 },
-  { x: 0.76, y: 0.60, w: 0.23, h: 0.36 },
-  { x: 0.00, y: 0.25, w: 0.18, h: 0.42 },
-  { x: 0.82, y: 0.25, w: 0.17, h: 0.42 },
-  { x: 0.30, y: 0.00, w: 0.40, h: 0.13 },
-  { x: 0.30, y: 0.85, w: 0.40, h: 0.14 },
+  { x: 0.00, y: 0.00, w: 0.40, h: 0.50 },   // top-left quadrant
+  { x: 0.60, y: 0.00, w: 0.40, h: 0.50 },   // top-right quadrant
+  { x: 0.00, y: 0.50, w: 0.35, h: 0.50 },   // bottom-left
+  { x: 0.65, y: 0.50, w: 0.35, h: 0.50 },   // bottom-right
+  { x: 0.00, y: 0.10, w: 0.30, h: 0.60 },   // left side
+  { x: 0.70, y: 0.10, w: 0.30, h: 0.60 },   // right side
 ];
 
 function ConstellationCanvas({ active }) {
@@ -159,8 +157,8 @@ function ConstellationCanvas({ active }) {
       // Silhouette — translucent mythological figure
       if ((phase === 1 || phase === 0) && c.silhouette) {
         const silAlpha = phase === 1
-          ? Math.min(0.08, t * 0.16)
-          : Math.max(0, ease(t) * 0.06);
+          ? Math.min(0.18, t * 0.36)
+          : Math.max(0, ease(t) * 0.14);
         if (silAlpha > 0.005) {
           ctx.beginPath();
           const sil = c.silhouette;
@@ -176,9 +174,9 @@ function ConstellationCanvas({ active }) {
           const cx = sx0 + 0.5 * sw, cy = sy0 + 0.5 * sh;
           const gr = Math.max(sw, sh) * 0.6;
           const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, gr);
-          grad.addColorStop(0, "rgba(80, 120, 200, " + (silAlpha * 1.5) + ")");
-          grad.addColorStop(0.6, "rgba(60, 90, 170, " + silAlpha + ")");
-          grad.addColorStop(1, "rgba(40, 60, 140, 0)");
+          grad.addColorStop(0, "rgba(70, 110, 200, " + (silAlpha * 2.0) + ")");
+          grad.addColorStop(0.6, "rgba(50, 85, 180, " + (silAlpha * 1.3) + ")");
+          grad.addColorStop(1, "rgba(40, 70, 160, 0)");
           ctx.fillStyle = grad;
           ctx.fill();
         }
@@ -186,7 +184,7 @@ function ConstellationCanvas({ active }) {
 
       // Also draw silhouette during fade-out
       if (phase === 2 && c.silhouette) {
-        const silAlpha = 0.08 * Math.max(0, 1 - t);
+        const silAlpha = 0.18 * Math.max(0, 1 - t);
         if (silAlpha > 0.005) {
           ctx.beginPath();
           const sil = c.silhouette;
@@ -200,9 +198,9 @@ function ConstellationCanvas({ active }) {
           const cx = sx0 + 0.5 * sw, cy = sy0 + 0.5 * sh;
           const gr = Math.max(sw, sh) * 0.6;
           const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, gr);
-          grad.addColorStop(0, "rgba(80, 120, 200, " + (silAlpha * 1.5) + ")");
-          grad.addColorStop(0.6, "rgba(60, 90, 170, " + silAlpha + ")");
-          grad.addColorStop(1, "rgba(40, 60, 140, 0)");
+          grad.addColorStop(0, "rgba(70, 110, 200, " + (silAlpha * 2.0) + ")");
+          grad.addColorStop(0.6, "rgba(50, 85, 180, " + (silAlpha * 1.3) + ")");
+          grad.addColorStop(1, "rgba(40, 70, 160, 0)");
           ctx.fillStyle = grad;
           ctx.fill();
         }
@@ -210,7 +208,7 @@ function ConstellationCanvas({ active }) {
 
       // Lines — soft glow + crisp core
       if (phase === 1 || phase === 2) {
-        const lineAlpha = phase === 1 ? Math.min(0.3, t * 0.6) : 0.3 * Math.max(0, 1 - t);
+        const lineAlpha = phase === 1 ? Math.min(0.45, t * 0.9) : 0.45 * Math.max(0, 1 - t);
         const lv = phase === 1 ? Math.ceil(Math.min(1, t * 1.5) * c.lines.length) : c.lines.length;
 
         for (let i = 0; i < lv && i < c.lines.length; i++) {
@@ -220,11 +218,11 @@ function ConstellationCanvas({ active }) {
           // Glow
           ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
           ctx.strokeStyle = `rgba(190, 170, 110, ${lineAlpha * 0.25})`;
-          ctx.lineWidth = 3; ctx.stroke();
+          ctx.lineWidth = 4; ctx.stroke();
           // Core
           ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
           ctx.strokeStyle = `rgba(210, 190, 120, ${lineAlpha})`;
-          ctx.lineWidth = 0.7; ctx.stroke();
+          ctx.lineWidth = 1.0; ctx.stroke();
         }
       }
 
@@ -238,7 +236,7 @@ function ConstellationCanvas({ active }) {
         const b = locked ? 1 : starBright * 0.6;
 
         if (b > 0.08) {
-          const hr = locked ? 8 : 4;
+          const hr = locked ? 12 : 5;
           const halo = ctx.createRadialGradient(px, py, 0, px, py, hr);
           halo.addColorStop(0, `rgba(220, 200, 130, ${0.22 * b})`);
           halo.addColorStop(1, "rgba(220, 200, 130, 0)");
@@ -247,7 +245,7 @@ function ConstellationCanvas({ active }) {
         }
 
         ctx.beginPath();
-        ctx.arc(px, py, locked ? 1.5 : 0.8, 0, 6.28);
+        ctx.arc(px, py, locked ? 2.2 : 1.0, 0, 6.28);
         ctx.fillStyle = locked
           ? `rgba(240, 225, 160, ${0.85 * Math.max(b, 0.25)})`
           : `rgba(180, 190, 215, ${0.3 * Math.max(b, 0.15)})`;
