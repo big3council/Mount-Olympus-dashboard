@@ -686,3 +686,26 @@ Gaia's value is the integrity of her independent observation. If B3C nodes can w
 
 ### Cross-Agent Write Risk (Rogue Agent Scenario)
 Since all nodes mount as the same NFS user ("admin"), any node can technically write to any other node's agent files on the NAS. Example: Zeus could overwrite `/Volumes/olympus/agents/poseidon/SOUL.md`. Poseidon would load the tampered identity on next OpenClaw session start. This is not a current code risk — no framework paths do this — but it is a real architectural vulnerability. Per-node NFS user mapping is the proper fix and is part of Phase 2 hardening.
+
+---
+
+## Dashboard — OlympusDashboard + CouncilChamber
+
+### Architecture
+- Source: ~/olympus/dashboard/src/ (OlympusDashboard.jsx monolith + CouncilChamber.jsx + OlympusView.jsx)
+- Served by: Vite dev server on port 3000, managed by LaunchAgent com.olympus.dashboard
+- Restart: `launchctl stop com.olympus.dashboard && launchctl start com.olympus.dashboard`
+- Build: `cd ~/olympus/dashboard && npm run build` (production assets in dist/)
+- Proxies: /projects, /gaia → localhost:18780; /live → ws://localhost:18780
+
+### Key Features (as of 2026-04-02)
+- **Smart naming**: POST /api/name endpoint in server.js calls Haiku for 2-4 word mission titles. Frontend caches in missionTitles state. ANTHROPIC_API_KEY in framework .env
+- **Live streaming**: Direct agent calls use callAgentStream() with SSE parsing. agent_stream WS events accumulate in streamingContent state
+- **Sacred geometry idle state**: CouncilChamber.jsx renders 4 corner elements (Metatrons Cube, Golden Ratio Spiral, Sri Yantra, Merkaba) with independent phase machines
+- **Agent logos**: SVG icons at ~/olympus/dashboard/public/agents/*.svg (copied from /Volumes/olympus/agents/). Logo specs in mount_olympus_architecture_notes DB table
+- **WS replay guard**: isReplayingRef suppresses auto-selecting missions from ring buffer replay on page refresh (2s window)
+
+### Dashboard Restart Checklist
+1. `cd ~/olympus/dashboard && npm run build`
+2. `launchctl stop com.olympus.dashboard && sleep 1 && launchctl start com.olympus.dashboard`
+3. Hard refresh browser (Cmd+Shift+R)
