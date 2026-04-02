@@ -41,3 +41,4 @@ framework/ws_quorum_test.mjs
 
 # Tools (shell scripts / python utils - runtime)
 tools/
+dashboard/public/constellations/
