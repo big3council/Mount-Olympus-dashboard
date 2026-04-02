@@ -279,7 +279,7 @@ function SacredGeometryCanvas() {
 
       // Aura
       const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,size*0.48);
-      aura.addColorStop(0,`rgba(176,74,220,${0.02*alpha})`);
+      aura.addColorStop(0,`rgba(176,74,220,${0.035*alpha})`);
       aura.addColorStop(1,"rgba(176,74,220,0)");
       ctx.beginPath(); ctx.arc(pcx,pcy,size*0.48,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
 
@@ -289,7 +289,7 @@ function SacredGeometryCanvas() {
         const petalR = size * (ring === 0 ? 0.42 : 0.34);
         const petalW = TWO_PI / petalCount * 0.4;
         const baseRot = ring === 0 ? innerRot * 0.2 : -innerRot * 0.25;
-        const pa = (0.03 + breathe * 0.02) * alpha;
+        const pa = (0.06 + breathe * 0.04) * alpha;
 
         for (let i = 0; i < petalCount; i++) {
           const a = baseRot + (i * TWO_PI) / petalCount;
@@ -299,7 +299,7 @@ function SacredGeometryCanvas() {
           ctx.quadraticCurveTo(pcx + Math.cos(a) * tip, pcy + Math.sin(a) * tip,
                                 pcx + Math.cos(a + petalW) * petalR, pcy + Math.sin(a + petalW) * petalR);
           ctx.strokeStyle = `rgba(176,74,220,${pa})`;
-          ctx.lineWidth = 0.35;
+          ctx.lineWidth = 0.5;
           ctx.stroke();
         }
       }
@@ -308,8 +308,8 @@ function SacredGeometryCanvas() {
       for (let i = 0; i < 3; i++) {
         const r = size * (0.30 - i * 0.05);
         ctx.beginPath(); ctx.arc(pcx, pcy, r, 0, TWO_PI);
-        ctx.strokeStyle = `rgba(176,74,220,${(0.04 + breathe*0.02)*alpha})`;
-        ctx.lineWidth = 0.3; ctx.stroke();
+        ctx.strokeStyle = `rgba(176,74,220,${(0.07 + breathe*0.04)*alpha})`;
+        ctx.lineWidth = 0.45; ctx.stroke();
       }
 
       // 9 interlocking triangles (the core yantra)
@@ -324,7 +324,7 @@ function SacredGeometryCanvas() {
           const s = set.scales[si];
           const r = size * s;
           const rot = set.rot + si * 0.15;
-          const ta = (0.05 + breathe * 0.04) * alpha * (1 - si * 0.12);
+          const ta = (0.09 + breathe * 0.06) * alpha * (1 - si * 0.08);
 
           ctx.beginPath();
           for (let i = 0; i <= 3; i++) {
@@ -335,7 +335,7 @@ function SacredGeometryCanvas() {
           }
           ctx.closePath();
           ctx.strokeStyle = `rgba(176,74,220,${ta})`;
-          ctx.lineWidth = 0.4;
+          ctx.lineWidth = 0.55;
           ctx.stroke();
         }
       }
@@ -344,7 +344,7 @@ function SacredGeometryCanvas() {
       const gateRot = innerRot * 0.15;
       for (let g = 0; g < 3; g++) {
         const gateR = size * (0.46 - g * 0.015);
-        const ga = (0.02 + breathe * 0.015) * alpha;
+        const ga = (0.045 + breathe * 0.03) * alpha;
         ctx.save();
         ctx.translate(pcx, pcy);
         ctx.rotate(gateRot + g * 0.02);
@@ -378,7 +378,7 @@ function SacredGeometryCanvas() {
       for (let i = 0; i < 3; i++) {
         const r = size * (0.05 + i * 0.03);
         const tRot = innerRot * (1.5 + i * 0.2);
-        const ta = (0.035 + breathe * 0.02) * alpha;
+        const ta2 = (0.06 + breathe * 0.04) * alpha;
         ctx.beginPath();
         for (let j = 0; j <= 3; j++) {
           const a = tRot + (j * TWO_PI) / 3 - Math.PI / 2;
@@ -386,7 +386,7 @@ function SacredGeometryCanvas() {
           j === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
         }
         ctx.closePath();
-        ctx.strokeStyle = `rgba(220,160,255,${ta})`;
+        ctx.strokeStyle = `rgba(220,160,255,${ta2})`;
         ctx.lineWidth = 0.3;
         ctx.stroke();
       }
@@ -395,154 +395,135 @@ function SacredGeometryCanvas() {
       const binduPulse = 1 + 0.3 * Math.sin(ts / 3000);
       const binduR = 2.5 * binduPulse;
       const binduHalo = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,binduR*4);
-      binduHalo.addColorStop(0,`rgba(220,160,255,${0.4*alpha})`);
+      binduHalo.addColorStop(0,`rgba(220,160,255,${0.6*alpha})`);
       binduHalo.addColorStop(1,"rgba(176,74,220,0)");
       ctx.beginPath(); ctx.arc(pcx,pcy,binduR*4,0,TWO_PI); ctx.fillStyle=binduHalo; ctx.fill();
       ctx.beginPath(); ctx.arc(pcx,pcy,binduR,0,TWO_PI);
-      ctx.fillStyle=`rgba(240,200,255,${0.6*alpha})`; ctx.fill();
+      ctx.fillStyle=`rgba(240,200,255,${0.8*alpha})`; ctx.fill();
     }
 
     // ══════════════════════════════════════════════════════════════════════
-    // PLATONIC SOLIDS RENDERER (rotating 3D wireframes → 2D projection)
+    // MERKABA (Star Tetrahedron) RENDERER
     // ══════════════════════════════════════════════════════════════════════
-    // Cycle: tetrahedron → cube → octahedron → dodecahedron → icosahedron
-    const PHI_P = 1.618033988749;
-    const PLATONIC = [
-      { name: "tetrahedron", verts: [[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]],
-        edges: [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]] },
-      { name: "cube", verts: [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],
-        edges: [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]] },
-      { name: "octahedron", verts: [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],
-        edges: [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[2,5],[3,4],[3,5]] },
-      { name: "icosahedron", verts: [[0,1,PHI_P],[0,-1,PHI_P],[0,1,-PHI_P],[0,-1,-PHI_P],
-          [1,PHI_P,0],[-1,PHI_P,0],[1,-PHI_P,0],[-1,-PHI_P,0],
-          [PHI_P,0,1],[-PHI_P,0,1],[PHI_P,0,-1],[-PHI_P,0,-1]],
-        edges: [[0,1],[0,4],[0,5],[0,8],[0,9],[1,6],[1,7],[1,8],[1,9],[2,3],[2,4],[2,5],[2,10],[2,11],
-          [3,6],[3,7],[3,10],[3,11],[4,5],[4,8],[4,10],[5,9],[5,11],[6,7],[6,8],[6,10],[7,9],[7,11],[8,10],[9,11]] },
-      { name: "dodecahedron", verts: [
-          [1,1,1],[1,1,-1],[1,-1,1],[1,-1,-1],[-1,1,1],[-1,1,-1],[-1,-1,1],[-1,-1,-1],
-          [0,PHI_P,1/PHI_P],[0,PHI_P,-1/PHI_P],[0,-PHI_P,1/PHI_P],[0,-PHI_P,-1/PHI_P],
-          [1/PHI_P,0,PHI_P],[1/PHI_P,0,-PHI_P],[-1/PHI_P,0,PHI_P],[-1/PHI_P,0,-PHI_P],
-          [PHI_P,1/PHI_P,0],[PHI_P,-1/PHI_P,0],[-PHI_P,1/PHI_P,0],[-PHI_P,-1/PHI_P,0]],
-        edges: [[0,8],[0,12],[0,16],[1,9],[1,13],[1,16],[2,10],[2,12],[2,17],[3,11],[3,13],[3,17],
-          [4,8],[4,14],[4,18],[5,9],[5,15],[5,18],[6,10],[6,14],[6,19],[7,11],[7,15],[7,19],
-          [8,9],[10,11],[12,14],[13,15],[16,17],[18,19]] },
-    ];
-    let platonicIdx = 0;
-    let platonicTimer = 0;
-    const PLATONIC_SWITCH = 20000; // switch shape every 8s
+    function drawMerkaba(ts, pcx, pcy, size, alpha) {
+      const breathe = 0.5 + 0.5 * Math.sin(ts / 13000);
+      const breathe2 = 0.5 + 0.5 * Math.sin(ts / 9000 + 2);
 
-    function project3D(x, y, z, rotX, rotY, rotZ) {
-      // Rotate around Y
-      let x1 = x*Math.cos(rotY) - z*Math.sin(rotY);
-      let z1 = x*Math.sin(rotY) + z*Math.cos(rotY);
-      // Rotate around X
-      let y1 = y*Math.cos(rotX) - z1*Math.sin(rotX);
-      let z2 = y*Math.sin(rotX) + z1*Math.cos(rotX);
-      // Rotate around Z
-      let x2 = x1*Math.cos(rotZ) - y1*Math.sin(rotZ);
-      let y2 = x1*Math.sin(rotZ) + y1*Math.cos(rotZ);
-      // Simple perspective
-      const d = 4;
-      const scale = d / (d + z2);
-      return { x: x2 * scale, y: y2 * scale, z: z2 };
-    }
+      // Two interlocking tetrahedra — one points up, one points down
+      // Rotating in opposite directions
+      const rot1 = ts * 0.00008;  // slow clockwise
+      const rot2 = -ts * 0.00006; // slower counter-clockwise
+      const tilt = Math.PI * 0.12; // slight tilt for 3D feel
 
-    function drawPlatonicSolids(ts, dt, pcx, pcy, size, alpha) {
-      platonicTimer += dt;
-      if (platonicTimer >= PLATONIC_SWITCH) {
-        platonicTimer = 0;
-        platonicIdx = (platonicIdx + 1) % PLATONIC.length;
+      const scale = size * 0.14;
+
+      // Tetrahedron vertices (unit)
+      const tetUp = [
+        [0, -1.2, 0],           // top
+        [-1, 0.6, -0.7],       // base left-back
+        [1, 0.6, -0.7],        // base right-back
+        [0, 0.6, 1],           // base front
+      ];
+      const tetDown = [
+        [0, 1.2, 0],            // bottom
+        [-1, -0.6, -0.7],      // top left-back
+        [1, -0.6, -0.7],       // top right-back
+        [0, -0.6, 1],          // top front
+      ];
+      const tetEdges = [[0,1],[0,2],[0,3],[1,2],[2,3],[3,1]];
+
+      function rotateY(v, a) {
+        return [v[0]*Math.cos(a)-v[2]*Math.sin(a), v[1], v[0]*Math.sin(a)+v[2]*Math.cos(a)];
       }
-      const breathe = 0.5 + 0.5 * Math.sin(ts / 11000);
-      const shape = PLATONIC[platonicIdx];
+      function rotateX(v, a) {
+        return [v[0], v[1]*Math.cos(a)-v[2]*Math.sin(a), v[1]*Math.sin(a)+v[2]*Math.cos(a)];
+      }
+      function proj(v) {
+        const d = 5;
+        const s = d / (d + v[2]);
+        return { x: v[0] * s * scale, y: v[1] * s * scale, z: v[2] };
+      }
 
       // Aura
-      const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,size*0.4);
-      aura.addColorStop(0,`rgba(94,232,176,${0.015*alpha})`);
-      aura.addColorStop(1,"rgba(94,232,176,0)");
-      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.4,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
+      const auraR = size * 0.42;
+      const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,auraR);
+      aura.addColorStop(0, `rgba(94,232,176,${0.025*alpha})`);
+      aura.addColorStop(1, "rgba(94,232,176,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,auraR,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
 
-      const rotX = ts * 0.00008;
-      const rotY = ts * 0.00012;
-      const rotZ = ts * 0.00005;
-      const scale = size * 0.12;
+      // Draw both tetrahedra
+      const tets = [
+        { verts: tetUp, rot: rot1, color: "94,232,176", label: "up" },
+        { verts: tetDown, rot: rot2, color: "120,200,255", label: "down" },
+      ];
 
-      // Normalize vertex distances
-      const maxDist = Math.max(...shape.verts.map(v => Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])));
-      const normScale = scale / maxDist;
+      for (const tet of tets) {
+        const projected = tet.verts.map(v => {
+          let rv = rotateY(v, tet.rot);
+          rv = rotateX(rv, tilt);
+          return proj(rv);
+        });
 
-      // Project all vertices
-      const projected = shape.verts.map(v => project3D(v[0]*normScale, v[1]*normScale, v[2]*normScale, rotX, rotY, rotZ));
+        const lineA = (0.08 + breathe * 0.06) * alpha;
 
-      // Draw edges
-      const lineA = (0.06 + breathe * 0.05) * alpha;
-      ctx.lineWidth = 0.5;
-      for (const [i, j] of shape.edges) {
-        const a = projected[i], b = projected[j];
-        // Depth-based alpha (closer = brighter)
-        const avgZ = (a.z + b.z) / 2;
-        const depthFade = 0.5 + 0.5 * Math.max(0, Math.min(1, (avgZ + scale) / (scale * 2)));
-        ctx.beginPath();
-        ctx.moveTo(pcx + a.x, pcy + a.y);
-        ctx.lineTo(pcx + b.x, pcy + b.y);
-        ctx.strokeStyle = `rgba(94,232,176,${lineA * depthFade})`;
-        ctx.stroke();
+        // Edges
+        ctx.lineWidth = 0.5;
+        for (const [i, j] of tetEdges) {
+          const a = projected[i], b = projected[j];
+          const avgZ = (a.z + b.z) / 2;
+          const df = 0.4 + 0.6 * Math.max(0, Math.min(1, (avgZ + 2) / 4));
+          ctx.beginPath();
+          ctx.moveTo(pcx + a.x, pcy + a.y);
+          ctx.lineTo(pcx + b.x, pcy + b.y);
+          ctx.strokeStyle = `rgba(${tet.color},${lineA * df})`;
+          ctx.stroke();
+        }
+
+        // Face fills (very subtle transparent)
+        const faceA = (0.012 + breathe2 * 0.008) * alpha;
+        const faces = [[0,1,2],[0,2,3],[0,3,1],[1,2,3]];
+        for (const face of faces) {
+          const [a,b,c] = face.map(i => projected[i]);
+          ctx.beginPath();
+          ctx.moveTo(pcx+a.x, pcy+a.y);
+          ctx.lineTo(pcx+b.x, pcy+b.y);
+          ctx.lineTo(pcx+c.x, pcy+c.y);
+          ctx.closePath();
+          ctx.fillStyle = `rgba(${tet.color},${faceA})`;
+          ctx.fill();
+        }
+
+        // Vertices
+        for (const p of projected) {
+          const df = 0.4 + 0.6 * Math.max(0, Math.min(1, (p.z + 2) / 4));
+          const dotR = 1.5 * df + 0.5;
+          const halo = ctx.createRadialGradient(pcx+p.x,pcy+p.y,0,pcx+p.x,pcy+p.y,dotR*3.5);
+          halo.addColorStop(0, `rgba(${tet.color},${0.3*alpha*df})`);
+          halo.addColorStop(1, `rgba(${tet.color},0)`);
+          ctx.beginPath(); ctx.arc(pcx+p.x,pcy+p.y,dotR*3.5,0,TWO_PI);
+          ctx.fillStyle=halo; ctx.fill();
+          ctx.beginPath(); ctx.arc(pcx+p.x,pcy+p.y,dotR,0,TWO_PI);
+          ctx.fillStyle=`rgba(200,255,230,${0.5*alpha*df})`; ctx.fill();
+        }
       }
 
-      // Draw vertices
-      for (const p of projected) {
-        const depthFade = 0.5 + 0.5 * Math.max(0, Math.min(1, (p.z + scale) / (scale * 2)));
-        const dotR = 1.2 * depthFade + 0.5;
-        const halo = ctx.createRadialGradient(pcx+p.x,pcy+p.y,0,pcx+p.x,pcy+p.y,dotR*3);
-        halo.addColorStop(0,`rgba(94,232,176,${0.25*alpha*depthFade})`);
-        halo.addColorStop(1,"rgba(94,232,176,0)");
-        ctx.beginPath(); ctx.arc(pcx+p.x,pcy+p.y,dotR*3,0,TWO_PI); ctx.fillStyle=halo; ctx.fill();
-        ctx.beginPath(); ctx.arc(pcx+p.x,pcy+p.y,dotR,0,TWO_PI);
-        ctx.fillStyle=`rgba(160,255,220,${0.4*alpha*depthFade})`; ctx.fill();
-      }
+      // Central energy core — pulsing at intersection
+      const coreR = 3 + breathe2 * 2;
+      const coreHalo = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,coreR*5);
+      coreHalo.addColorStop(0, `rgba(200,255,230,${0.2*alpha})`);
+      coreHalo.addColorStop(0.4, `rgba(94,232,176,${0.08*alpha})`);
+      coreHalo.addColorStop(1, "rgba(94,232,176,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,coreR*5,0,TWO_PI); ctx.fillStyle=coreHalo; ctx.fill();
+      ctx.beginPath(); ctx.arc(pcx,pcy,coreR,0,TWO_PI);
+      ctx.fillStyle=`rgba(220,255,240,${0.5*alpha})`; ctx.fill();
 
-      // Inner dual solid (smaller, counter-rotating)
-      const innerScale = 0.5;
-      const iRotX = -rotX * 1.3, iRotY = -rotY * 1.3, iRotZ = -rotZ * 1.3;
-      const innerProj = shape.verts.map(v => project3D(
-        v[0]*normScale*innerScale, v[1]*normScale*innerScale, v[2]*normScale*innerScale,
-        iRotX, iRotY, iRotZ
-      ));
-      const innerA = lineA * 0.5;
-      ctx.lineWidth = 0.3;
-      for (const [i, j] of shape.edges) {
-        const a = innerProj[i], b = innerProj[j];
-        const avgZ = (a.z + b.z) / 2;
-        const df = 0.5 + 0.5 * Math.max(0, Math.min(1, (avgZ + scale*innerScale) / (scale*innerScale*2)));
-        ctx.beginPath(); ctx.moveTo(pcx+a.x, pcy+a.y); ctx.lineTo(pcx+b.x, pcy+b.y);
-        ctx.strokeStyle = `rgba(94,232,176,${innerA * df})`; ctx.stroke();
-      }
+      // Outer sphere (containment)
+      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.38,0,TWO_PI);
+      ctx.strokeStyle=`rgba(94,232,176,${0.02*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
 
-      // Connecting lines between outer and inner vertices (first 4 only, subtle)
-      const connectA = lineA * 0.2;
-      ctx.lineWidth = 0.2;
-      const connectCount = Math.min(shape.verts.length, 6);
-      for (let i = 0; i < connectCount; i++) {
-        ctx.beginPath();
-        ctx.moveTo(pcx + projected[i].x, pcy + projected[i].y);
-        ctx.lineTo(pcx + innerProj[i].x, pcy + innerProj[i].y);
-        ctx.strokeStyle = `rgba(94,232,176,${connectA})`; ctx.stroke();
-      }
-
-      // Outer containment circle with slow rotation
-      const ocRot = ts * 0.00003;
-      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.35,0,TWO_PI);
-      ctx.strokeStyle=`rgba(94,232,176,${0.025*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
-
-      // 6 tick marks
-      for (let i = 0; i < 6; i++) {
-        const a = ocRot + (i * TWO_PI) / 6;
-        ctx.beginPath();
-        ctx.moveTo(pcx+Math.cos(a)*(size*0.35-2), pcy+Math.sin(a)*(size*0.35-2));
-        ctx.lineTo(pcx+Math.cos(a)*(size*0.35+2), pcy+Math.sin(a)*(size*0.35+2));
-        ctx.strokeStyle=`rgba(94,232,176,${0.04*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
-      }
+      // Second sphere slightly larger
+      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.42,0,TWO_PI);
+      ctx.strokeStyle=`rgba(94,232,176,${0.012*alpha})`; ctx.lineWidth=0.25; ctx.stroke();
     }
 
     // ══════════════════════════════════════════════════════════════════════
@@ -581,7 +562,7 @@ function SacredGeometryCanvas() {
       if (metAlpha > 0.01)  drawMetatron(ts, metatronState.x*W, metatronState.y*H, eSize, metAlpha);
       if (spirAlpha > 0.01) drawGoldenSpiral(ts, spiralState.x*W, spiralState.y*H, eSize, spirAlpha);
       if (yanAlpha > 0.01)  drawSriYantra(ts, yantraState.x*W, yantraState.y*H, eSize, yanAlpha);
-      if (platAlpha > 0.01) drawPlatonicSolids(ts, dt, platonicState.x*W, platonicState.y*H, eSize, platAlpha);
+      if (platAlpha > 0.01) drawMerkaba(ts, platonicState.x*W, platonicState.y*H, eSize, platAlpha);
 
       raf = requestAnimationFrame(draw);
     };
