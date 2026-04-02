@@ -2303,6 +2303,7 @@ export default function OlympusDashboard() {
 
   const wsRef          = useRef(null);
   const reconnectTimer = useRef(null);
+  const isReplayingRef  = useRef(true);  // suppress auto-select during WS replay
   const backoffRef     = useRef(1000);   // exponential reconnect delay (ms)
   const queueStateRef  = useRef([]);     // stable ref for beforeunload handler
 
@@ -2644,7 +2645,8 @@ useEffect(() => {
               output: null,
             },
           }));
-          setActiveMissionId(id);
+          // Only auto-select if this is a live event, not a ring buffer replay
+          if (!isReplayingRef.current) setActiveMissionId(id);
           break;
         }
 
@@ -2883,6 +2885,9 @@ useEffect(() => {
       const ws = new WebSocket(WS_URL);
       wsRef.current = ws;
       ws.onopen = () => {
+        // Mark replay window — skip auto-selecting missions from ring buffer replay
+        isReplayingRef.current = true;
+        setTimeout(() => { isReplayingRef.current = false; }, 2000);
         setWsStatus("live");
         clearTimeout(reconnectTimer.current);
         backoffRef.current = 1000;
