@@ -4,263 +4,294 @@
  */
 import { useEffect, useRef } from "react";
 
-// ── Constellations — gnomonic projection of real J2000 RA/Dec star positions ──
-// Each constellation preserves the actual visual shape as seen from Earth.
-const CONSTELLATIONS = [
-  { name:"Orion",
-    stars:[[0.204,0.08],[0.642,0.08],[0.542,0.452],[0.482,0.504],[0.415,0.547],[0.796,0.915],[0.314,0.92]],
-    lines:[[0,1],[0,4],[1,2],[2,3],[3,4],[2,5],[4,6]],
-    // Hunter silhouette: head, right arm raised with club, left arm with shield, torso, legs
-    silhouette:[[0.42,0.0],[0.36,0.02],[0.32,0.06],[0.30,0.04],[0.22,0.0],[0.10,0.0],[0.05,0.05],[0.08,0.10],[0.14,0.08],[0.18,0.06],[0.22,0.08],[0.16,0.14],[0.14,0.20],[0.18,0.22],[0.22,0.16],[0.28,0.12],[0.32,0.14],[0.30,0.20],[0.28,0.30],[0.30,0.38],[0.34,0.42],[0.38,0.46],[0.36,0.50],[0.32,0.56],[0.28,0.60],[0.24,0.68],[0.22,0.76],[0.24,0.84],[0.28,0.90],[0.30,0.96],[0.32,1.0],[0.38,1.0],[0.40,0.94],[0.38,0.86],[0.36,0.78],[0.38,0.70],[0.42,0.62],[0.48,0.58],[0.52,0.62],[0.56,0.70],[0.58,0.78],[0.56,0.86],[0.58,0.92],[0.62,0.96],[0.68,1.0],[0.72,1.0],[0.78,0.96],[0.80,0.90],[0.82,0.82],[0.78,0.74],[0.74,0.66],[0.70,0.58],[0.68,0.50],[0.70,0.42],[0.72,0.34],[0.76,0.30],[0.82,0.28],[0.88,0.24],[0.90,0.18],[0.86,0.14],[0.78,0.16],[0.72,0.18],[0.68,0.14],[0.66,0.10],[0.62,0.06],[0.56,0.04],[0.50,0.02],[0.46,0.0]] },
-  { name:"Big Dipper",
-    stars:[[0.92,0.267],[0.92,0.474],[0.725,0.635],[0.596,0.509],[0.382,0.54],[0.207,0.551],[0.08,0.733]],
-    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]],
-    // Bear (Ursa Major) silhouette
-    silhouette:[[0.95,0.18],[0.98,0.22],[0.98,0.30],[0.96,0.38],[0.96,0.48],[0.94,0.52],[0.88,0.56],[0.82,0.60],[0.78,0.66],[0.74,0.72],[0.72,0.68],[0.70,0.60],[0.66,0.56],[0.62,0.52],[0.58,0.48],[0.52,0.46],[0.46,0.48],[0.40,0.52],[0.36,0.56],[0.30,0.56],[0.24,0.54],[0.20,0.50],[0.16,0.52],[0.12,0.56],[0.10,0.62],[0.08,0.68],[0.06,0.76],[0.04,0.82],[0.08,0.82],[0.12,0.78],[0.14,0.72],[0.18,0.68],[0.22,0.64],[0.26,0.62],[0.30,0.64],[0.32,0.68],[0.30,0.74],[0.28,0.80],[0.32,0.82],[0.36,0.78],[0.38,0.72],[0.42,0.66],[0.46,0.62],[0.50,0.60],[0.54,0.58],[0.58,0.58],[0.62,0.60],[0.66,0.64],[0.68,0.68],[0.72,0.72],[0.76,0.68],[0.80,0.64],[0.84,0.58],[0.88,0.52],[0.92,0.48],[0.94,0.42],[0.96,0.36],[0.96,0.28],[0.95,0.22]] },
-  { name:"Cassiopeia",
-    stars:[[0.92,0.553],[0.698,0.805],[0.514,0.48],[0.227,0.507],[0.08,0.195]],
-    lines:[[0,1],[1,2],[2,3],[3,4]],
-    // Seated queen silhouette
-    silhouette:[[0.06,0.10],[0.04,0.16],[0.06,0.22],[0.10,0.28],[0.14,0.34],[0.18,0.40],[0.22,0.46],[0.20,0.52],[0.16,0.58],[0.18,0.64],[0.24,0.60],[0.30,0.54],[0.36,0.50],[0.42,0.46],[0.48,0.44],[0.52,0.46],[0.56,0.50],[0.60,0.56],[0.64,0.62],[0.68,0.68],[0.72,0.74],[0.76,0.80],[0.80,0.84],[0.84,0.82],[0.88,0.76],[0.92,0.68],[0.96,0.60],[0.96,0.52],[0.92,0.50],[0.86,0.54],[0.80,0.60],[0.74,0.64],[0.68,0.62],[0.62,0.56],[0.56,0.48],[0.52,0.42],[0.48,0.38],[0.42,0.36],[0.36,0.38],[0.30,0.42],[0.24,0.44],[0.18,0.40],[0.14,0.34],[0.10,0.26],[0.08,0.18]] },
-  { name:"Scorpius",
-    stars:[[0.909,0.08],[0.92,0.134],[0.64,0.29],[0.573,0.368],[0.436,0.637],[0.423,0.804],[0.408,0.92],[0.08,0.789],[0.08,0.795]],
-    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[4,7],[7,8]],
-    // Scorpion: pincers at top, body curving down, tail curling with stinger
-    silhouette:[[0.96,0.04],[0.92,0.02],[0.86,0.06],[0.88,0.12],[0.92,0.16],[0.88,0.20],[0.82,0.18],[0.78,0.14],[0.74,0.18],[0.70,0.22],[0.66,0.26],[0.62,0.30],[0.58,0.34],[0.54,0.38],[0.50,0.44],[0.46,0.52],[0.44,0.60],[0.42,0.68],[0.40,0.76],[0.38,0.84],[0.36,0.92],[0.38,0.98],[0.42,0.96],[0.44,0.88],[0.46,0.80],[0.48,0.72],[0.50,0.64],[0.52,0.56],[0.56,0.48],[0.60,0.42],[0.64,0.36],[0.68,0.32],[0.72,0.28],[0.76,0.24],[0.80,0.22],[0.84,0.24],[0.88,0.28],[0.84,0.30],[0.78,0.28],[0.72,0.30],[0.18,0.72],[0.10,0.76],[0.04,0.80],[0.02,0.84],[0.06,0.86],[0.12,0.82],[0.18,0.78],[0.30,0.72],[0.36,0.68],[0.40,0.64]] },
-  { name:"Leo",
-    stars:[[0.837,0.738],[0.841,0.577],[0.739,0.477],[0.92,0.262],[0.92,0.334],[0.315,0.442],[0.08,0.621]],
-    lines:[[0,1],[1,2],[2,5],[5,6],[1,3],[3,4],[4,1]],
-    // Lion: head with mane, body, legs, tail
-    silhouette:[[0.96,0.20],[0.94,0.16],[0.88,0.14],[0.84,0.18],[0.80,0.22],[0.78,0.28],[0.82,0.32],[0.86,0.30],[0.90,0.28],[0.94,0.30],[0.96,0.34],[0.94,0.40],[0.90,0.44],[0.86,0.48],[0.82,0.52],[0.78,0.54],[0.72,0.54],[0.64,0.52],[0.56,0.50],[0.48,0.48],[0.40,0.46],[0.32,0.44],[0.24,0.46],[0.18,0.50],[0.12,0.54],[0.08,0.58],[0.06,0.64],[0.04,0.70],[0.06,0.72],[0.10,0.68],[0.14,0.64],[0.18,0.60],[0.22,0.58],[0.26,0.60],[0.28,0.66],[0.26,0.72],[0.28,0.74],[0.32,0.70],[0.36,0.64],[0.40,0.60],[0.46,0.58],[0.52,0.58],[0.58,0.60],[0.64,0.62],[0.70,0.64],[0.76,0.68],[0.80,0.72],[0.82,0.78],[0.84,0.82],[0.86,0.78],[0.88,0.72],[0.86,0.66],[0.84,0.60],[0.86,0.54],[0.90,0.48],[0.94,0.42],[0.96,0.36]] },
-  { name:"Hercules",
-    stars:[[0.286,0.92],[0.714,0.702],[0.597,0.298],[0.574,0.08],[0.316,0.086],[0.434,0.327],[0.297,0.569]],
-    lines:[[1,2],[2,3],[3,4],[4,5],[5,2],[5,6],[6,1],[6,0]],
-    // Kneeling warrior with club raised
-    silhouette:[[0.56,0.0],[0.50,0.02],[0.48,0.06],[0.50,0.10],[0.54,0.08],[0.58,0.06],[0.62,0.04],[0.64,0.08],[0.66,0.14],[0.68,0.20],[0.64,0.22],[0.58,0.24],[0.54,0.28],[0.50,0.32],[0.46,0.36],[0.42,0.32],[0.38,0.26],[0.34,0.20],[0.30,0.14],[0.26,0.10],[0.22,0.08],[0.18,0.12],[0.22,0.16],[0.26,0.20],[0.30,0.24],[0.34,0.28],[0.36,0.34],[0.34,0.40],[0.30,0.46],[0.28,0.52],[0.26,0.58],[0.24,0.64],[0.22,0.70],[0.20,0.76],[0.22,0.82],[0.26,0.88],[0.28,0.94],[0.30,1.0],[0.36,0.98],[0.34,0.92],[0.32,0.84],[0.34,0.76],[0.38,0.68],[0.42,0.62],[0.48,0.58],[0.54,0.56],[0.60,0.58],[0.66,0.62],[0.70,0.68],[0.74,0.74],[0.76,0.68],[0.74,0.60],[0.70,0.54],[0.66,0.48],[0.62,0.42],[0.58,0.36],[0.56,0.30],[0.58,0.24],[0.62,0.18],[0.64,0.12],[0.62,0.06],[0.60,0.02]] },
-  { name:"Lyra",
-    stars:[[0.82,0.123],[0.6,0.08],[0.603,0.297],[0.448,0.907],[0.18,0.92],[0.325,0.397]],
-    lines:[[0,1],[0,2],[1,5],[2,3],[3,4],[4,5]],
-    // Lyre/harp shape
-    silhouette:[[0.70,0.04],[0.58,0.02],[0.48,0.06],[0.42,0.14],[0.38,0.24],[0.34,0.34],[0.30,0.44],[0.26,0.56],[0.22,0.68],[0.18,0.80],[0.14,0.90],[0.16,0.96],[0.22,0.96],[0.28,0.88],[0.34,0.78],[0.38,0.68],[0.42,0.58],[0.46,0.68],[0.48,0.78],[0.50,0.88],[0.52,0.96],[0.58,0.96],[0.60,0.88],[0.56,0.76],[0.52,0.64],[0.50,0.52],[0.52,0.40],[0.56,0.30],[0.60,0.22],[0.66,0.14],[0.72,0.08],[0.78,0.06],[0.84,0.08],[0.86,0.14],[0.82,0.16],[0.76,0.12],[0.72,0.08]] },
-  { name:"Corona Borealis",
-    stars:[[0.841,0.137],[0.92,0.441],[0.802,0.773],[0.555,0.833],[0.347,0.863],[0.103,0.748],[0.08,0.337]],
-    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6]],
-    // Crown/tiara arc
-    silhouette:[[0.86,0.08],[0.80,0.06],[0.74,0.10],[0.78,0.16],[0.84,0.14],[0.90,0.18],[0.94,0.28],[0.96,0.40],[0.94,0.52],[0.90,0.62],[0.86,0.72],[0.82,0.80],[0.76,0.86],[0.68,0.88],[0.58,0.90],[0.48,0.92],[0.38,0.92],[0.28,0.88],[0.18,0.82],[0.12,0.76],[0.08,0.66],[0.06,0.54],[0.06,0.42],[0.08,0.32],[0.12,0.26],[0.18,0.30],[0.14,0.40],[0.12,0.52],[0.14,0.64],[0.20,0.74],[0.28,0.80],[0.36,0.84],[0.46,0.84],[0.56,0.82],[0.66,0.78],[0.74,0.72],[0.80,0.64],[0.86,0.54],[0.90,0.42],[0.92,0.30],[0.90,0.20],[0.88,0.12]] },
-  { name:"B3C Triangle",
-    stars:[[0.5,0.08],[0.08,0.92],[0.92,0.92]],
-    lines:[[0,1],[1,2],[2,0]],
-    silhouette:null },
-];
-
-// Sky regions — edges and corners, never overlapping the throne chamber
-const SKY_REGIONS = [
-  { x: 0.00, y: 0.00, w: 0.40, h: 0.50 },   // top-left quadrant
-  { x: 0.60, y: 0.00, w: 0.40, h: 0.50 },   // top-right quadrant
-  { x: 0.00, y: 0.50, w: 0.35, h: 0.50 },   // bottom-left
-  { x: 0.65, y: 0.50, w: 0.35, h: 0.50 },   // bottom-right
-  { x: 0.00, y: 0.10, w: 0.30, h: 0.60 },   // left side
-  { x: 0.70, y: 0.10, w: 0.30, h: 0.60 },   // right side
-];
-
-function ConstellationCanvas({ active }) {
+// ── Sacred Geometry Background Canvas ────────────────────────────────────────
+// 5 layers: particles, Metatron's Cube, orbital rings, edge geometry, radial lines
+function SacredGeometryCanvas() {
   const canvasRef = useRef(null);
+
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    let W, H;
+    let W, H, cx, cy;
+
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       W = canvas.offsetWidth; H = canvas.offsetHeight;
+      cx = W / 2; cy = H / 2;
       canvas.width = W * dpr; canvas.height = H * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
     window.addEventListener("resize", resize);
 
-    // Deep space background
-    const bgStars = Array.from({ length: 400 }, () => ({
+    // ── LAYER 1: Particle drift ──────────────────────────────────────────
+    const particles = Array.from({ length: 150 }, () => ({
       x: Math.random(), y: Math.random(),
-      r: 0.15 + Math.random() * 0.7,
-      a: 0.02 + Math.random() * 0.12,
-      ph: Math.random() * 6.28,
-      sp: 0.0002 + Math.random() * 0.0006,
+      r: 0.2 + Math.random() * 0.6,
+      baseA: 0.04 + Math.random() * 0.11,
+      ph: Math.random() * Math.PI * 2,
+      sp: 0.0003 + Math.random() * 0.0008,
+      vy: -(0.003 + Math.random() * 0.008), // upward drift
+      vx: (Math.random() - 0.5) * 0.002,     // lateral wobble
     }));
 
-    const maxS = Math.max(...CONSTELLATIONS.map(c => c.stars.length));
-    const cS = Array.from({ length: maxS }, () => ({
-      x: Math.random(), y: Math.random(), sx: 0, sy: 0, tx: 0, ty: 0,
-    }));
+    // ── LAYER 2: Metatron's Cube geometry ────────────────────────────────
+    // 13 circles: 1 center + 6 inner ring + 6 outer ring
+    const R_INNER = 0.12; // as fraction of min(W,H)
+    const R_OUTER = 0.24;
+    const CIRCLE_R = 0.035;
 
-    let cIdx = Math.floor(Math.random() * CONSTELLATIONS.length);
-    let regionIdx = Math.floor(Math.random() * SKY_REGIONS.length);
-    let phase = 0, elapsed = 0;
-    const DUR = [10000, 14000, 5000, 3000];
+    function getMetatronCircles(outerRot, innerRot) {
+      const circles = [{ x: 0, y: 0, ring: "center" }]; // center
+      for (let i = 0; i < 6; i++) {
+        const a = innerRot + (i * Math.PI * 2) / 6;
+        circles.push({ x: Math.cos(a) * R_INNER, y: Math.sin(a) * R_INNER, ring: "inner" });
+      }
+      for (let i = 0; i < 6; i++) {
+        const a = outerRot + (i * Math.PI * 2) / 6;
+        circles.push({ x: Math.cos(a) * R_OUTER, y: Math.sin(a) * R_OUTER, ring: "outer" });
+      }
+      return circles;
+    }
 
-    function setTgts() {
-      const c = CONSTELLATIONS[cIdx];
-      const r = SKY_REGIONS[regionIdx];
-      for (let i = 0; i < maxS; i++) {
-        cS[i].sx = cS[i].x; cS[i].sy = cS[i].y;
-        if (i < c.stars.length) {
-          cS[i].tx = r.x + c.stars[i][0] * r.w;
-          cS[i].ty = r.y + c.stars[i][1] * r.h;
-        } else {
-          cS[i].tx = Math.random(); cS[i].ty = Math.random();
+    // Pre-compute all 78 connection lines (every pair of 13 circles)
+    const metLines = [];
+    for (let i = 0; i < 13; i++) {
+      for (let j = i + 1; j < 13; j++) {
+        metLines.push([i, j]);
+      }
+    }
+
+    // ── LAYER 3: Orbital rings ───────────────────────────────────────────
+    const orbits = [
+      { r: 0.16, color: "232,184,75",  dots: 3, speed: 1 / 15000, phase: 0 },       // gold - Zeus
+      { r: 0.28, color: "74,184,232",  dots: 2, speed: 1 / 18000, phase: 0.3 },     // blue - Poseidon
+      { r: 0.38, color: "176,74,220",  dots: 2, speed: 1 / 22000, phase: 0.6 },     // purple - Hades
+    ];
+
+    // ── LAYER 4: Edge geometry shapes ────────────────────────────────────
+    // Each shape: position (normalized), type, rotation speed, size
+    const edgeShapes = [
+      // Corners
+      { x: 0.08, y: 0.08, type: "hexagon",  sz: 0.06, rotSpeed: 1/45000, innerScale: 0.6 },
+      { x: 0.92, y: 0.08, type: "triangle", sz: 0.05, rotSpeed: 1/55000, innerScale: 0.6 },
+      { x: 0.08, y: 0.92, type: "diamond",  sz: 0.05, rotSpeed: 1/65000, innerScale: 0.6 },
+      { x: 0.92, y: 0.92, type: "pentagon", sz: 0.05, rotSpeed: 1/75000, innerScale: 0.6 },
+      // Top edge
+      { x: 0.33, y: 0.06, type: "star6",    sz: 0.035, rotSpeed: 1/60000, innerScale: 0.65 },
+      { x: 0.67, y: 0.06, type: "star6",    sz: 0.035, rotSpeed: 1/70000, innerScale: 0.65 },
+      // Bottom edge
+      { x: 0.33, y: 0.94, type: "octagon",  sz: 0.035, rotSpeed: 1/80000, innerScale: 0.65 },
+      { x: 0.67, y: 0.94, type: "octagon",  sz: 0.035, rotSpeed: 1/90000, innerScale: 0.65 },
+      // Left edge
+      { x: 0.05, y: 0.50, type: "vesica",   sz: 0.045, rotSpeed: 1/50000, innerScale: 0.7 },
+      // Right edge
+      { x: 0.95, y: 0.50, type: "triCircle", sz: 0.04, rotSpeed: 1/55000, innerScale: 0.7 },
+    ];
+
+    function drawPolygon(px, py, r, sides, rot) {
+      ctx.beginPath();
+      for (let i = 0; i <= sides; i++) {
+        const a = rot + (i * Math.PI * 2) / sides - Math.PI / 2;
+        const x = px + Math.cos(a) * r;
+        const y = py + Math.sin(a) * r;
+        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.closePath();
+    }
+
+    function drawShape(shape, px, py, r, rot, alpha) {
+      ctx.strokeStyle = `rgba(200, 175, 110, ${alpha})`;
+      ctx.lineWidth = 0.5;
+
+      switch (shape.type) {
+        case "hexagon": drawPolygon(px, py, r, 6, rot); ctx.stroke(); break;
+        case "triangle": drawPolygon(px, py, r, 3, rot); ctx.stroke(); break;
+        case "diamond": drawPolygon(px, py, r, 4, rot); ctx.stroke(); break;
+        case "pentagon": drawPolygon(px, py, r, 5, rot); ctx.stroke(); break;
+        case "octagon": drawPolygon(px, py, r, 8, rot); ctx.stroke(); break;
+        case "star6": {
+          // Star of David: two overlapping triangles
+          drawPolygon(px, py, r, 3, rot); ctx.stroke();
+          drawPolygon(px, py, r, 3, rot + Math.PI); ctx.stroke();
+          break;
+        }
+        case "vesica": {
+          // Two overlapping circles
+          const offset = r * 0.5;
+          ctx.beginPath(); ctx.arc(px - offset, py, r * 0.7, 0, Math.PI * 2); ctx.stroke();
+          ctx.beginPath(); ctx.arc(px + offset, py, r * 0.7, 0, Math.PI * 2); ctx.stroke();
+          break;
+        }
+        case "triCircle": {
+          // Triangle with inscribed circle
+          drawPolygon(px, py, r, 3, rot); ctx.stroke();
+          ctx.beginPath(); ctx.arc(px, py, r * 0.45, 0, Math.PI * 2); ctx.stroke();
+          break;
         }
       }
     }
-    function scatter() {
-      for (const s of cS) { s.sx = s.x; s.sy = s.y; s.tx = Math.random(); s.ty = Math.random(); }
-    }
-    setTgts();
 
+    // ── LAYER 5: Radial ambient lines ────────────────────────────────────
+    const radialCount = 8;
+
+    // ── Animation loop ───────────────────────────────────────────────────
     let lt = 0, raf;
-    function ease(t) { return t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2) / 2; }
+    const TWO_PI = Math.PI * 2;
 
     const draw = (ts) => {
       if (!lt) lt = ts;
-      const dt = ts - lt; lt = ts; elapsed += dt;
+      const dt = ts - lt;
+      lt = ts;
       W = canvas.offsetWidth; H = canvas.offsetHeight;
+      cx = W / 2; cy = H / 2;
+      const S = Math.min(W, H);
       ctx.clearRect(0, 0, W, H);
-      ctx.globalAlpha = active ? 0.15 : 1;
 
-      // Background dust
-      for (const s of bgStars) {
-        s.ph += s.sp * dt;
+      // Center fade mask: geometry dims in center third
+      const centerFade = (px, py) => {
+        const dx = (px - cx) / (W * 0.33);
+        const dy = (py - cy) / (H * 0.33);
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        return dist < 1 ? 0.25 + 0.75 * dist : 1;
+      };
+
+      // ── L1: Particles ─────────────────────────────────────────────────
+      for (const p of particles) {
+        p.y += p.vy;
+        p.x += p.vx + Math.sin(ts * 0.0002 + p.ph) * 0.0002;
+        if (p.y < -0.02) { p.y = 1.02; p.x = Math.random(); }
+        if (p.x < -0.02) p.x = 1.02;
+        if (p.x > 1.02) p.x = -0.02;
+        p.ph += p.sp * dt;
+        const a = p.baseA * (0.5 + 0.5 * Math.sin(p.ph));
         ctx.beginPath();
-        ctx.arc(s.x * W, s.y * H, s.r, 0, 6.28);
-        ctx.fillStyle = `rgba(140, 150, 190, ${s.a * (0.5 + 0.5 * Math.sin(s.ph))})`;
+        ctx.arc(p.x * W, p.y * H, p.r, 0, TWO_PI);
+        ctx.fillStyle = `rgba(180, 200, 240, ${a})`;
         ctx.fill();
       }
 
-      if (elapsed >= DUR[phase]) {
-        elapsed = 0; phase = (phase + 1) % 4;
-        if (phase === 0) {
-          cIdx = (cIdx + 1) % CONSTELLATIONS.length;
-          let nr; do { nr = Math.floor(Math.random() * SKY_REGIONS.length); } while (nr === regionIdx && SKY_REGIONS.length > 1);
-          regionIdx = nr;
-          setTgts();
-        }
-        if (phase === 2) scatter();
+      // ── L5: Radial lines (drawn early so they're behind everything) ───
+      for (let i = 0; i < radialCount; i++) {
+        const a = (i * TWO_PI) / radialCount;
+        const ex = cx + Math.cos(a) * S * 0.6;
+        const ey = cy + Math.sin(a) * S * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(ex, ey);
+        ctx.strokeStyle = "rgba(200, 175, 110, 0.035)";
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
       }
 
-      const t = Math.min(1, elapsed / DUR[phase]);
-      const et = (phase === 0 || phase === 2) ? ease(t) : 0;
-      const c = CONSTELLATIONS[cIdx];
+      // ── L2: Metatron's Cube ────────────────────────────────────────────
+      const outerRot = (ts / 120000) * TWO_PI;         // 120s revolution
+      const innerRot = -(ts / 90000) * TWO_PI;         // 90s counter
+      const breathe = 0.5 + 0.5 * Math.sin(ts / 12500); // 25s full cycle (sin period = 2*12500)
+      const baseLineAlpha = 0.05 + breathe * 0.07;     // 3-9%
 
-      if (phase === 0 || phase === 2) {
-        for (const s of cS) { s.x = s.sx + (s.tx - s.sx) * et; s.y = s.sy + (s.ty - s.sy) * et; }
+      const circles = getMetatronCircles(outerRot, innerRot);
+
+      // Draw connecting lines
+      ctx.lineWidth = 0.5;
+      for (const [i, j] of metLines) {
+        const c1 = circles[i], c2 = circles[j];
+        const px1 = cx + c1.x * S, py1 = cy + c1.y * S;
+        const px2 = cx + c2.x * S, py2 = cy + c2.y * S;
+        const midX = (px1 + px2) / 2, midY = (py1 + py2) / 2;
+        const fade = centerFade(midX, midY);
+        const a = baseLineAlpha * fade;
+        ctx.beginPath();
+        ctx.moveTo(px1, py1);
+        ctx.lineTo(px2, py2);
+        ctx.strokeStyle = `rgba(232, 184, 75, ${a})`;
+        ctx.stroke();
       }
 
-      // Silhouette — translucent mythological figure
-      if ((phase === 1 || phase === 0) && c.silhouette) {
-        const silAlpha = phase === 1
-          ? Math.min(0.18, t * 0.36)
-          : Math.max(0, ease(t) * 0.14);
-        if (silAlpha > 0.005) {
+      // Draw circles
+      for (let i = 0; i < circles.length; i++) {
+        const c = circles[i];
+        const px = cx + c.x * S, py = cy + c.y * S;
+        const fade = centerFade(px, py);
+        const pulse = 1 + 0.15 * Math.sin(ts / 4000 + i * 0.5);
+        const r = CIRCLE_R * S * pulse;
+        const a = (0.06 + breathe * 0.05) * fade;
+        ctx.beginPath();
+        ctx.arc(px, py, r, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(232, 184, 75, ${a})`;
+        ctx.lineWidth = 0.4;
+        ctx.stroke();
+      }
+
+      // ── L3: Orbital rings + traveling dots ─────────────────────────────
+      for (const orb of orbits) {
+        const r = orb.r * S;
+        const fade = orb.r < 0.2 ? 0.3 : 1; // inner ring dimmer (center region)
+
+        // Ring ellipse
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, r, r * 0.35, 0.15, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(${orb.color}, ${0.07 * fade})`;
+        ctx.lineWidth = 0.4;
+        ctx.stroke();
+
+        // Traveling dots
+        for (let d = 0; d < orb.dots; d++) {
+          const angle = (ts * orb.speed + orb.phase + (d * TWO_PI) / orb.dots) * TWO_PI;
+          const dx = cx + Math.cos(angle) * r;
+          const dy = cy + Math.sin(angle) * r * 0.35 + Math.cos(0.15) * 0; // ellipse tilt approx
+          const dotR = 2 + Math.sin(ts * 0.002 + d) * 1;
+
+          // Glow halo
+          const grad = ctx.createRadialGradient(dx, dy, 0, dx, dy, dotR * 3);
+          grad.addColorStop(0, `rgba(${orb.color}, ${0.35 * fade})`);
+          grad.addColorStop(1, `rgba(${orb.color}, 0)`);
           ctx.beginPath();
-          const sil = c.silhouette;
-          const r = SKY_REGIONS[regionIdx];
-          // Map silhouette coords through same region transform as stars
-          const sx0 = r.x * W, sy0 = r.y * H, sw = r.w * W, sh = r.h * H;
-          ctx.moveTo(sx0 + sil[0][0] * sw, sy0 + sil[0][1] * sh);
-          for (let i = 1; i < sil.length; i++) {
-            ctx.lineTo(sx0 + sil[i][0] * sw, sy0 + sil[i][1] * sh);
-          }
-          ctx.closePath();
-          // Radial gradient fill — brighter in center, fading at edges
-          const cx = sx0 + 0.5 * sw, cy = sy0 + 0.5 * sh;
-          const gr = Math.max(sw, sh) * 0.6;
-          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, gr);
-          grad.addColorStop(0, "rgba(70, 110, 200, " + (silAlpha * 2.0) + ")");
-          grad.addColorStop(0.6, "rgba(50, 85, 180, " + (silAlpha * 1.3) + ")");
-          grad.addColorStop(1, "rgba(40, 70, 160, 0)");
+          ctx.arc(dx, dy, dotR * 3, 0, TWO_PI);
           ctx.fillStyle = grad;
           ctx.fill();
-        }
-      }
 
-      // Also draw silhouette during fade-out
-      if (phase === 2 && c.silhouette) {
-        const silAlpha = 0.18 * Math.max(0, 1 - t);
-        if (silAlpha > 0.005) {
-          ctx.beginPath();
-          const sil = c.silhouette;
-          const r = SKY_REGIONS[regionIdx];
-          const sx0 = r.x * W, sy0 = r.y * H, sw = r.w * W, sh = r.h * H;
-          ctx.moveTo(sx0 + sil[0][0] * sw, sy0 + sil[0][1] * sh);
-          for (let i = 1; i < sil.length; i++) {
-            ctx.lineTo(sx0 + sil[i][0] * sw, sy0 + sil[i][1] * sh);
-          }
-          ctx.closePath();
-          const cx = sx0 + 0.5 * sw, cy = sy0 + 0.5 * sh;
-          const gr = Math.max(sw, sh) * 0.6;
-          const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, gr);
-          grad.addColorStop(0, "rgba(70, 110, 200, " + (silAlpha * 2.0) + ")");
-          grad.addColorStop(0.6, "rgba(50, 85, 180, " + (silAlpha * 1.3) + ")");
-          grad.addColorStop(1, "rgba(40, 70, 160, 0)");
-          ctx.fillStyle = grad;
-          ctx.fill();
-        }
-      }
-
-      // Lines — soft glow + crisp core
-      if (phase === 1 || phase === 2) {
-        const lineAlpha = phase === 1 ? Math.min(0.45, t * 0.9) : 0.45 * Math.max(0, 1 - t);
-        const lv = phase === 1 ? Math.ceil(Math.min(1, t * 1.5) * c.lines.length) : c.lines.length;
-
-        for (let i = 0; i < lv && i < c.lines.length; i++) {
-          const [a, b] = c.lines[i];
-          if (a >= maxS || b >= maxS) continue;
-          const ax = cS[a].x*W, ay = cS[a].y*H, bx = cS[b].x*W, by = cS[b].y*H;
-          // Glow
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
-          ctx.strokeStyle = `rgba(190, 170, 110, ${lineAlpha * 0.25})`;
-          ctx.lineWidth = 4; ctx.stroke();
           // Core
-          ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
-          ctx.strokeStyle = `rgba(210, 190, 120, ${lineAlpha})`;
-          ctx.lineWidth = 1.0; ctx.stroke();
+          ctx.beginPath();
+          ctx.arc(dx, dy, dotR * 0.6, 0, TWO_PI);
+          ctx.fillStyle = `rgba(${orb.color}, ${0.6 * fade})`;
+          ctx.fill();
         }
       }
 
-      // Stars
-      const locked = phase === 1;
-      const starBright = phase === 0 ? ease(t) : phase === 2 ? 1 - ease(t) : phase === 1 ? 1 : 0;
+      // ── L4: Edge geometry ──────────────────────────────────────────────
+      for (const shape of edgeShapes) {
+        const px = shape.x * W;
+        const py = shape.y * H;
+        const r = shape.sz * S;
+        const rot = ts * shape.rotSpeed * TWO_PI;
+        const innerRot2 = -rot * 0.65; // counter-rotate at 65% speed
+        const alpha = 0.05 + 0.04 * Math.sin(ts * 0.0003 + shape.x * 10);
 
-      for (let i = 0; i < c.stars.length && i < maxS; i++) {
-        const s = cS[i];
-        const px = s.x * W, py = s.y * H;
-        const b = locked ? 1 : starBright * 0.6;
-
-        if (b > 0.08) {
-          const hr = locked ? 12 : 5;
-          const halo = ctx.createRadialGradient(px, py, 0, px, py, hr);
-          halo.addColorStop(0, `rgba(220, 200, 130, ${0.22 * b})`);
-          halo.addColorStop(1, "rgba(220, 200, 130, 0)");
-          ctx.beginPath(); ctx.arc(px, py, hr, 0, 6.28);
-          ctx.fillStyle = halo; ctx.fill();
-        }
-
-        ctx.beginPath();
-        ctx.arc(px, py, locked ? 2.2 : 1.0, 0, 6.28);
-        ctx.fillStyle = locked
-          ? `rgba(240, 225, 160, ${0.85 * Math.max(b, 0.25)})`
-          : `rgba(180, 190, 215, ${0.3 * Math.max(b, 0.15)})`;
-        ctx.fill();
+        // Outer shape
+        ctx.save();
+        drawShape(shape, px, py, r, rot, alpha);
+        // Inner counter-rotating shape
+        drawShape(shape, px, py, r * shape.innerScale, innerRot2, alpha * 0.7);
+        ctx.restore();
       }
 
-      ctx.globalAlpha = 1;
       raf = requestAnimationFrame(draw);
     };
+
     raf = requestAnimationFrame(draw);
     return () => { cancelAnimationFrame(raf); window.removeEventListener("resize", resize); };
-  }, [active]);
+  }, []);
 
-  return <canvas ref={canvasRef} style={{ position:"absolute", inset:0, width:"100%", height:"100%", pointerEvents:"none", zIndex:0 }} />;
+  return (
+    <canvas ref={canvasRef} style={{
+      position: "absolute", top: 0, left: 0, width: "100%", height: "100%",
+      zIndex: 0, pointerEvents: "none",
+    }} />
+  );
 }
+
 
 // ── Greek Throne SVG ─────────────────────────────────────────────────────────
 function GreekThrone({ color, size, glow }) {
@@ -361,7 +392,8 @@ export default function CouncilChamber({ nodeHealth = {}, classifying = false })
       alignItems:"center", justifyContent:"center", overflow:"hidden",
       animation:"mode-enter 0.8s cubic-bezier(0.16,1,0.3,1) both",
     }}>
-      <ConstellationCanvas active={classifying} />
+
+      <SacredGeometryCanvas />
 
       {/* Council thrones */}
       <div style={{ position:"relative", zIndex:1, display:"flex", alignItems:"flex-end", gap:36, marginBottom:12 }}>
