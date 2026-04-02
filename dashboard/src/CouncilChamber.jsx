@@ -4,43 +4,39 @@
  */
 import { useEffect, useRef } from "react";
 
-// ── Constellations — real star positions from astronomical RA/Dec catalogs ────
-// Coordinates normalized 0-1 within each constellation's bounding box,
-// derived from J2000 epoch right ascension and declination.
+// ── Constellations — gnomonic projection of real J2000 RA/Dec star positions ──
+// Each constellation preserves the actual visual shape as seen from Earth.
 const CONSTELLATIONS = [
   { name:"Orion",
-    stars:[[0.08,0.08],[0.7,0.13],[0.56,0.46],[0.47,0.5],[0.38,0.54],[0.23,0.92],[0.92,0.85]],
-    lines:[[0,1],[0,4],[1,2],[2,3],[3,4],[4,5],[2,6]] },
-  { name:"Hercules",
-    stars:[[0.43,0.92],[0.92,0.68],[0.8,0.33],[0.78,0.08],[0.43,0.16],[0.59,0.35],[0.43,0.56],[0.08,0.46]],
-    lines:[[1,2],[2,3],[2,5],[5,4],[4,3],[5,6],[6,1],[6,0],[4,7]] },
-  { name:"Scorpius",
-    stars:[[0.67,0.32],[0.87,0.08],[0.92,0.18],[0.12,0.7],[0.08,0.92],[0.49,0.6],[0.47,0.74],[0.46,0.89],[0.13,0.71]],
-    lines:[[1,2],[2,0],[0,5],[5,6],[6,7],[7,4],[5,3],[3,8]] },
-  { name:"Cassiopeia",
-    stars:[[0.67,0.92],[0.92,0.61],[0.54,0.43],[0.31,0.48],[0.08,0.08]],
-    lines:[[1,0],[0,2],[2,3],[3,4]] },
-  { name:"Leo",
-    stars:[[0.76,0.92],[0.08,0.76],[0.69,0.45],[0.32,0.41],[0.77,0.63],[0.87,0.08],[0.92,0.22]],
-    lines:[[0,4],[4,2],[2,3],[3,1],[4,5],[5,6],[6,4]] },
+    stars:[[0.204,0.08],[0.642,0.08],[0.542,0.452],[0.482,0.504],[0.415,0.547],[0.796,0.915],[0.314,0.92]],
+    lines:[[0,1],[0,4],[1,2],[2,3],[3,4],[2,5],[4,6]] },
   { name:"Big Dipper",
-    stars:[[0.08,0.92],[0.2,0.54],[0.35,0.47],[0.55,0.4],[0.66,0.62],[0.92,0.44],[0.91,0.08]],
-    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,3]] },
+    stars:[[0.92,0.267],[0.92,0.474],[0.725,0.635],[0.596,0.509],[0.382,0.54],[0.207,0.551],[0.08,0.733]],
+    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[4,5],[5,6]] },
+  { name:"Cassiopeia",
+    stars:[[0.92,0.553],[0.698,0.805],[0.514,0.48],[0.227,0.507],[0.08,0.195]],
+    lines:[[0,1],[1,2],[2,3],[3,4]] },
+  { name:"Scorpius",
+    stars:[[0.909,0.08],[0.92,0.134],[0.64,0.29],[0.573,0.368],[0.436,0.637],[0.423,0.804],[0.408,0.92],[0.08,0.789],[0.08,0.795]],
+    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[4,7],[7,8]] },
+  { name:"Leo",
+    stars:[[0.837,0.738],[0.841,0.577],[0.739,0.477],[0.92,0.262],[0.92,0.334],[0.315,0.442],[0.08,0.621]],
+    lines:[[0,1],[1,2],[2,5],[5,6],[1,3],[3,4],[4,1]] },
+  { name:"Hercules",
+    stars:[[0.286,0.92],[0.714,0.702],[0.597,0.298],[0.574,0.08],[0.316,0.086],[0.434,0.327],[0.297,0.569]],
+    lines:[[1,2],[2,3],[3,4],[4,5],[5,2],[5,6],[6,1],[6,0]] },
   { name:"Lyra",
-    stars:[[0.92,0.08],[0.42,0.82],[0.08,0.92],[0.25,0.34],[0.62,0.24]],
-    lines:[[0,1],[0,4],[1,2],[2,3],[3,4]] },
+    stars:[[0.82,0.123],[0.6,0.08],[0.603,0.297],[0.448,0.907],[0.18,0.92],[0.325,0.397]],
+    lines:[[0,1],[0,2],[1,5],[2,3],[3,4],[4,5]] },
   { name:"Corona Borealis",
-    stars:[[0.75,0.81],[0.92,0.44],[0.55,0.88],[0.38,0.92],[0.18,0.79],[0.79,0.08],[0.08,0.32]],
-    lines:[[5,1],[1,0],[0,2],[2,3],[3,4],[4,6]] },
-  { name:"Pegasus",
-    stars:[[0.08,0.08],[0.92,0.12],[0.88,0.92],[0.12,0.88],[0.05,0.50],[0.50,0.05]],
-    lines:[[0,1],[1,2],[2,3],[3,0],[3,4],[0,5]] },
+    stars:[[0.841,0.137],[0.92,0.441],[0.802,0.773],[0.555,0.833],[0.347,0.863],[0.103,0.748],[0.08,0.337]],
+    lines:[[0,1],[1,2],[2,3],[3,4],[4,5],[5,6]] },
   { name:"B3C Triangle",
-    stars:[[0.50,0.05],[0.08,0.92],[0.92,0.92]],
+    stars:[[0.5,0.08],[0.08,0.92],[0.92,0.92]],
     lines:[[0,1],[1,2],[2,0]] },
 ];
 
-// Sky regions — edges and corners only, never overlapping the throne chamber center
+// Sky regions — edges and corners, never overlapping the throne chamber
 const SKY_REGIONS = [
   { x: 0.01, y: 0.02, w: 0.28, h: 0.36 },
   { x: 0.72, y: 0.02, w: 0.27, h: 0.36 },
@@ -68,7 +64,7 @@ function ConstellationCanvas({ active }) {
     resize();
     window.addEventListener("resize", resize);
 
-    // Deep space background — tiny pinpoint dust
+    // Deep space background
     const bgStars = Array.from({ length: 400 }, () => ({
       x: Math.random(), y: Math.random(),
       r: 0.15 + Math.random() * 0.7,
@@ -124,7 +120,6 @@ function ConstellationCanvas({ active }) {
         ctx.fill();
       }
 
-      // Phase machine
       if (elapsed >= DUR[phase]) {
         elapsed = 0; phase = (phase + 1) % 4;
         if (phase === 0) {
@@ -144,33 +139,27 @@ function ConstellationCanvas({ active }) {
         for (const s of cS) { s.x = s.sx + (s.tx - s.sx) * et; s.y = s.sy + (s.ty - s.sy) * et; }
       }
 
-      // Lines — thin core + wider soft glow
+      // Lines — soft glow + crisp core
       if (phase === 1 || phase === 2) {
-        const lineAlpha = phase === 1
-          ? Math.min(0.3, t * 0.6)
-          : 0.3 * Math.max(0, 1 - t);
+        const lineAlpha = phase === 1 ? Math.min(0.3, t * 0.6) : 0.3 * Math.max(0, 1 - t);
         const lv = phase === 1 ? Math.ceil(Math.min(1, t * 1.5) * c.lines.length) : c.lines.length;
 
         for (let i = 0; i < lv && i < c.lines.length; i++) {
           const [a, b] = c.lines[i];
           if (a >= maxS || b >= maxS) continue;
           const ax = cS[a].x*W, ay = cS[a].y*H, bx = cS[b].x*W, by = cS[b].y*H;
-
-          // Wide soft glow
+          // Glow
           ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
           ctx.strokeStyle = `rgba(190, 170, 110, ${lineAlpha * 0.25})`;
-          ctx.lineWidth = 3;
-          ctx.stroke();
-
-          // Core line
+          ctx.lineWidth = 3; ctx.stroke();
+          // Core
           ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
           ctx.strokeStyle = `rgba(210, 190, 120, ${lineAlpha})`;
-          ctx.lineWidth = 0.7;
-          ctx.stroke();
+          ctx.lineWidth = 0.7; ctx.stroke();
         }
       }
 
-      // Stars — warm halos when locked, cool pinpoints otherwise
+      // Stars
       const locked = phase === 1;
       const starBright = phase === 0 ? ease(t) : phase === 2 ? 1 - ease(t) : phase === 1 ? 1 : 0;
 
@@ -180,7 +169,6 @@ function ConstellationCanvas({ active }) {
         const b = locked ? 1 : starBright * 0.6;
 
         if (b > 0.08) {
-          // Halo
           const hr = locked ? 8 : 4;
           const halo = ctx.createRadialGradient(px, py, 0, px, py, hr);
           halo.addColorStop(0, `rgba(220, 200, 130, ${0.22 * b})`);
@@ -189,7 +177,6 @@ function ConstellationCanvas({ active }) {
           ctx.fillStyle = halo; ctx.fill();
         }
 
-        // Core point
         ctx.beginPath();
         ctx.arc(px, py, locked ? 1.5 : 0.8, 0, 6.28);
         ctx.fillStyle = locked
