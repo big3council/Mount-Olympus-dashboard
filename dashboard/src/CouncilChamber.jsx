@@ -55,7 +55,7 @@ function SacredGeometryCanvas() {
         targetY: CORNERS[startCorner].y,
         phase: 0, // 0=fade-in, 1=hold, 2=fade-out, 3=travel
         elapsed: 0,
-        durations: [3000, holdTime, 3000, 4000],
+        durations: [3000, holdTime, 3000, 6000],  // fade-in, hold, fade-out, pause
       };
     }
 
@@ -65,20 +65,15 @@ function SacredGeometryCanvas() {
         el.elapsed = 0;
         el.phase = (el.phase + 1) % 4;
         if (el.phase === 3) {
-          el.cornerIdx = (el.cornerIdx + 1) % 4;
+          // Stay in same corner — just pause before fading back in
           el.targetX = CORNERS[el.cornerIdx].x;
           el.targetY = CORNERS[el.cornerIdx].y;
         }
       }
       const t = Math.min(1, el.elapsed / el.durations[el.phase]);
-      if (el.phase === 3) {
-        const ease = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2) / 2;
-        el.x += (el.targetX - el.x) * ease * 0.08;
-        el.y += (el.targetY - el.y) * ease * 0.08;
-      }
-      if (el.phase === 0 && el.elapsed < 100) {
-        el.x = el.targetX; el.y = el.targetY;
-      }
+      // Element stays in its assigned corner
+      el.x = CORNERS[el.cornerIdx].x;
+      el.y = CORNERS[el.cornerIdx].y;
       if (el.phase === 0) return t;
       if (el.phase === 1) return 1;
       if (el.phase === 2) return 1 - t;
@@ -86,10 +81,10 @@ function SacredGeometryCanvas() {
     }
 
     // ── Element states (each starts in a different corner, different hold times) ──
-    const metatronState  = createElementState(0, 20000); // bottom-left, 20s hold
-    const spiralState    = createElementState(1, 16000); // bottom-right, 16s hold
-    const yantraState    = createElementState(2, 18000); // top-right, 18s hold
-    const platonicState  = createElementState(3, 15000); // top-left, 15s hold
+    const metatronState  = createElementState(0, 22000); // bottom-left, 22s hold
+    const spiralState    = createElementState(1, 18000); // bottom-right, 18s hold
+    const yantraState    = createElementState(2, 20000); // top-right, 20s hold
+    const platonicState  = createElementState(3, 16000); // top-left, 16s hold
 
     // ══════════════════════════════════════════════════════════════════════
     // METATRON'S CUBE RENDERER
@@ -280,7 +275,7 @@ function SacredGeometryCanvas() {
     // ══════════════════════════════════════════════════════════════════════
     function drawSriYantra(ts, pcx, pcy, size, alpha) {
       const breathe = 0.5 + 0.5 * Math.sin(ts / 15000);
-      const innerRot = (ts / 80000) * TWO_PI;
+      const innerRot = (ts / 120000) * TWO_PI;
 
       // Aura
       const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,size*0.48);
@@ -293,7 +288,7 @@ function SacredGeometryCanvas() {
         const petalCount = ring === 0 ? 16 : 8;
         const petalR = size * (ring === 0 ? 0.42 : 0.34);
         const petalW = TWO_PI / petalCount * 0.4;
-        const baseRot = ring === 0 ? innerRot * 0.3 : -innerRot * 0.4;
+        const baseRot = ring === 0 ? innerRot * 0.2 : -innerRot * 0.25;
         const pa = (0.03 + breathe * 0.02) * alpha;
 
         for (let i = 0; i < petalCount; i++) {
@@ -345,6 +340,57 @@ function SacredGeometryCanvas() {
         }
       }
 
+      // Gate squares (bhupura) — outermost rectangular frame
+      const gateRot = innerRot * 0.15;
+      for (let g = 0; g < 3; g++) {
+        const gateR = size * (0.46 - g * 0.015);
+        const ga = (0.02 + breathe * 0.015) * alpha;
+        ctx.save();
+        ctx.translate(pcx, pcy);
+        ctx.rotate(gateRot + g * 0.02);
+        ctx.strokeStyle = `rgba(176,74,220,${ga})`;
+        ctx.lineWidth = 0.3;
+        ctx.strokeRect(-gateR, -gateR, gateR*2, gateR*2);
+        ctx.restore();
+      }
+
+      // Gate openings (T-shapes on each side of outer square)
+      const gateOpenR = size * 0.46;
+      const gateW = size * 0.04;
+      const goa = 0.025 * alpha;
+      for (let side = 0; side < 4; side++) {
+        const a = gateRot + side * Math.PI / 2;
+        const mx = pcx + Math.cos(a) * gateOpenR;
+        const my = pcy + Math.sin(a) * gateOpenR;
+        const px = Math.cos(a + Math.PI/2) * gateW;
+        const py = Math.sin(a + Math.PI/2) * gateW;
+        ctx.beginPath();
+        ctx.moveTo(mx - px, my - py);
+        ctx.lineTo(mx + Math.cos(a)*gateW - px, my + Math.sin(a)*gateW - py);
+        ctx.lineTo(mx + Math.cos(a)*gateW + px, my + Math.sin(a)*gateW + py);
+        ctx.lineTo(mx + px, my + py);
+        ctx.strokeStyle = `rgba(176,74,220,${goa})`;
+        ctx.lineWidth = 0.3;
+        ctx.stroke();
+      }
+
+      // Additional inner triangle details — thin inscribed triangles
+      for (let i = 0; i < 3; i++) {
+        const r = size * (0.05 + i * 0.03);
+        const tRot = innerRot * (1.5 + i * 0.2);
+        const ta = (0.035 + breathe * 0.02) * alpha;
+        ctx.beginPath();
+        for (let j = 0; j <= 3; j++) {
+          const a = tRot + (j * TWO_PI) / 3 - Math.PI / 2;
+          const tx = pcx + Math.cos(a) * r, ty = pcy + Math.sin(a) * r;
+          j === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = `rgba(220,160,255,${ta})`;
+        ctx.lineWidth = 0.3;
+        ctx.stroke();
+      }
+
       // Central bindu (point)
       const binduPulse = 1 + 0.3 * Math.sin(ts / 3000);
       const binduR = 2.5 * binduPulse;
@@ -373,10 +419,18 @@ function SacredGeometryCanvas() {
           [PHI_P,0,1],[-PHI_P,0,1],[PHI_P,0,-1],[-PHI_P,0,-1]],
         edges: [[0,1],[0,4],[0,5],[0,8],[0,9],[1,6],[1,7],[1,8],[1,9],[2,3],[2,4],[2,5],[2,10],[2,11],
           [3,6],[3,7],[3,10],[3,11],[4,5],[4,8],[4,10],[5,9],[5,11],[6,7],[6,8],[6,10],[7,9],[7,11],[8,10],[9,11]] },
+      { name: "dodecahedron", verts: [
+          [1,1,1],[1,1,-1],[1,-1,1],[1,-1,-1],[-1,1,1],[-1,1,-1],[-1,-1,1],[-1,-1,-1],
+          [0,PHI_P,1/PHI_P],[0,PHI_P,-1/PHI_P],[0,-PHI_P,1/PHI_P],[0,-PHI_P,-1/PHI_P],
+          [1/PHI_P,0,PHI_P],[1/PHI_P,0,-PHI_P],[-1/PHI_P,0,PHI_P],[-1/PHI_P,0,-PHI_P],
+          [PHI_P,1/PHI_P,0],[PHI_P,-1/PHI_P,0],[-PHI_P,1/PHI_P,0],[-PHI_P,-1/PHI_P,0]],
+        edges: [[0,8],[0,12],[0,16],[1,9],[1,13],[1,16],[2,10],[2,12],[2,17],[3,11],[3,13],[3,17],
+          [4,8],[4,14],[4,18],[5,9],[5,15],[5,18],[6,10],[6,14],[6,19],[7,11],[7,15],[7,19],
+          [8,9],[10,11],[12,14],[13,15],[16,17],[18,19]] },
     ];
     let platonicIdx = 0;
     let platonicTimer = 0;
-    const PLATONIC_SWITCH = 8000; // switch shape every 8s
+    const PLATONIC_SWITCH = 20000; // switch shape every 8s
 
     function project3D(x, y, z, rotX, rotY, rotZ) {
       // Rotate around Y
@@ -409,9 +463,9 @@ function SacredGeometryCanvas() {
       aura.addColorStop(1,"rgba(94,232,176,0)");
       ctx.beginPath(); ctx.arc(pcx,pcy,size*0.4,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
 
-      const rotX = ts * 0.0003;
-      const rotY = ts * 0.0005;
-      const rotZ = ts * 0.0002;
+      const rotX = ts * 0.00008;
+      const rotY = ts * 0.00012;
+      const rotZ = ts * 0.00005;
       const scale = size * 0.12;
 
       // Normalize vertex distances
@@ -448,9 +502,47 @@ function SacredGeometryCanvas() {
         ctx.fillStyle=`rgba(160,255,220,${0.4*alpha*depthFade})`; ctx.fill();
       }
 
-      // Outer containment circle
+      // Inner dual solid (smaller, counter-rotating)
+      const innerScale = 0.5;
+      const iRotX = -rotX * 1.3, iRotY = -rotY * 1.3, iRotZ = -rotZ * 1.3;
+      const innerProj = shape.verts.map(v => project3D(
+        v[0]*normScale*innerScale, v[1]*normScale*innerScale, v[2]*normScale*innerScale,
+        iRotX, iRotY, iRotZ
+      ));
+      const innerA = lineA * 0.5;
+      ctx.lineWidth = 0.3;
+      for (const [i, j] of shape.edges) {
+        const a = innerProj[i], b = innerProj[j];
+        const avgZ = (a.z + b.z) / 2;
+        const df = 0.5 + 0.5 * Math.max(0, Math.min(1, (avgZ + scale*innerScale) / (scale*innerScale*2)));
+        ctx.beginPath(); ctx.moveTo(pcx+a.x, pcy+a.y); ctx.lineTo(pcx+b.x, pcy+b.y);
+        ctx.strokeStyle = `rgba(94,232,176,${innerA * df})`; ctx.stroke();
+      }
+
+      // Connecting lines between outer and inner vertices (first 4 only, subtle)
+      const connectA = lineA * 0.2;
+      ctx.lineWidth = 0.2;
+      const connectCount = Math.min(shape.verts.length, 6);
+      for (let i = 0; i < connectCount; i++) {
+        ctx.beginPath();
+        ctx.moveTo(pcx + projected[i].x, pcy + projected[i].y);
+        ctx.lineTo(pcx + innerProj[i].x, pcy + innerProj[i].y);
+        ctx.strokeStyle = `rgba(94,232,176,${connectA})`; ctx.stroke();
+      }
+
+      // Outer containment circle with slow rotation
+      const ocRot = ts * 0.00003;
       ctx.beginPath(); ctx.arc(pcx,pcy,size*0.35,0,TWO_PI);
-      ctx.strokeStyle=`rgba(94,232,176,${0.02*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
+      ctx.strokeStyle=`rgba(94,232,176,${0.025*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
+
+      // 6 tick marks
+      for (let i = 0; i < 6; i++) {
+        const a = ocRot + (i * TWO_PI) / 6;
+        ctx.beginPath();
+        ctx.moveTo(pcx+Math.cos(a)*(size*0.35-2), pcy+Math.sin(a)*(size*0.35-2));
+        ctx.lineTo(pcx+Math.cos(a)*(size*0.35+2), pcy+Math.sin(a)*(size*0.35+2));
+        ctx.strokeStyle=`rgba(94,232,176,${0.04*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
+      }
     }
 
     // ══════════════════════════════════════════════════════════════════════
