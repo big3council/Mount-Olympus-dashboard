@@ -4,7 +4,9 @@
  */
 import { useEffect, useRef } from "react";
 
-// ── Sacred Geometry Background — Wandering Metatron's Cube ───────────────────
+// ── Sacred Geometry Background — 4 independent wandering elements ────────────
+// Each element occupies one corner, holds, fades, then moves to a new corner.
+// Elements: Metatron's Cube, Golden Ratio Spiral, Sri Yantra, Platonic Solids
 function SacredGeometryCanvas() {
   const canvasRef = useRef(null);
 
@@ -22,294 +24,472 @@ function SacredGeometryCanvas() {
     };
     resize();
     window.addEventListener("resize", resize);
+    const TWO_PI = Math.PI * 2;
 
-    // ── Particle drift (subtle cosmic dust) ──────────────────────────────
+    // ── Particles ────────────────────────────────────────────────────────
     const particles = Array.from({ length: 120 }, () => ({
       x: Math.random(), y: Math.random(),
       r: 0.2 + Math.random() * 0.5,
       baseA: 0.03 + Math.random() * 0.08,
-      ph: Math.random() * Math.PI * 2,
+      ph: Math.random() * TWO_PI,
       sp: 0.0003 + Math.random() * 0.0006,
       vy: -(0.002 + Math.random() * 0.006),
       vx: (Math.random() - 0.5) * 0.001,
     }));
 
-    // ── Metatron's Cube geometry ─────────────────────────────────────────
-    // ── Complex Metatron's Cube — 4 rings + Flower of Life + full connections ──
-    const RINGS = [
-      { r: 0,    count: 1, label: "center" },
-      { r: 0.11, count: 6, label: "inner" },
-      { r: 0.22, count: 6, label: "mid" },
-      { r: 0.33, count: 6, label: "outer" },
-      { r: 0.42, count: 12, label: "crown" },
-    ];
-
-    function getCircles(ts) {
-      const circles = [];
-      // Ring rotations — each ring rotates at its own speed and direction
-      const rots = [
-        0,                             // center: static
-        -(ts / 90000) * Math.PI * 2,   // inner: counter-clockwise 90s
-        (ts / 120000) * Math.PI * 2,   // mid: clockwise 120s
-        -(ts / 150000) * Math.PI * 2,  // outer: counter 150s
-        (ts / 200000) * Math.PI * 2,   // crown: very slow clockwise 200s
-      ];
-      for (let ri = 0; ri < RINGS.length; ri++) {
-        const ring = RINGS[ri];
-        for (let i = 0; i < ring.count; i++) {
-          const a = rots[ri] + (i * Math.PI * 2) / ring.count;
-          circles.push({
-            x: ring.r === 0 ? 0 : Math.cos(a) * ring.r,
-            y: ring.r === 0 ? 0 : Math.sin(a) * ring.r,
-            ring: ri,
-          });
-        }
-      }
-      return circles;
-    }
-
-    // Flower of Life circle radii per ring
-    const FOL_RADII = [0.11, 0.08, 0.065, 0.05, 0.03];
-
-    // Pre-compute connection patterns
-    function getMetLines(circles) {
-      const lines = [];
-      const n = circles.length;
-      // Connect within each ring (adjacent)
-      let idx = 0;
-      for (const ring of RINGS) {
-        if (ring.count > 1) {
-          for (let i = 0; i < ring.count; i++) {
-            lines.push([idx + i, idx + ((i + 1) % ring.count)]);
-          }
-        }
-        idx += ring.count;
-      }
-      // Connect center to inner ring
-      for (let i = 1; i <= 6; i++) lines.push([0, i]);
-      // Connect inner to mid (corresponding + skip-one for star pattern)
-      for (let i = 0; i < 6; i++) {
-        lines.push([1 + i, 7 + i]);
-        lines.push([1 + i, 7 + ((i + 1) % 6)]);
-      }
-      // Connect mid to outer
-      for (let i = 0; i < 6; i++) {
-        lines.push([7 + i, 13 + i]);
-        lines.push([7 + i, 13 + ((i + 1) % 6)]);
-      }
-      // Connect outer to crown (each outer vertex connects to 2 nearest crown)
-      for (let i = 0; i < 6; i++) {
-        lines.push([13 + i, 19 + (i * 2)]);
-        lines.push([13 + i, 19 + (i * 2 + 1)]);
-      }
-      // Star of David: connect alternating inner vertices through center
-      for (let i = 0; i < 3; i++) {
-        lines.push([1 + i, 1 + i + 3]);
-      }
-      return lines;
-    }
-
-    // ── Wandering position state ─────────────────────────────────────────
-    // Cube spawns at a corner, holds while rotating, fades out, moves to next
+    // ── Corner positions ─────────────────────────────────────────────────
     const CORNERS = [
       { x: 0.18, y: 0.78 },  // bottom-left
       { x: 0.82, y: 0.78 },  // bottom-right
       { x: 0.82, y: 0.18 },  // top-right
       { x: 0.18, y: 0.18 },  // top-left
     ];
-    let cornerIdx = 0;
-    let cubeX = CORNERS[0].x, cubeY = CORNERS[0].y;
-    let targetX = cubeX, targetY = cubeY;
-    let cubePhase = 0; // 0=fade-in, 1=hold, 2=fade-out, 3=travel
-    let phaseElapsed = 0;
-    const PHASE_DUR = [3000, 18000, 3000, 4000]; // fade-in, hold, fade-out, travel
 
-    // ── Draw loop ────────────────────────────────────────────────────────
+    // ── Element state machine (shared pattern) ───────────────────────────
+    function createElementState(startCorner, holdTime) {
+      return {
+        cornerIdx: startCorner,
+        x: CORNERS[startCorner].x,
+        y: CORNERS[startCorner].y,
+        targetX: CORNERS[startCorner].x,
+        targetY: CORNERS[startCorner].y,
+        phase: 0, // 0=fade-in, 1=hold, 2=fade-out, 3=travel
+        elapsed: 0,
+        durations: [3000, holdTime, 3000, 4000],
+      };
+    }
+
+    function tickElement(el, dt) {
+      el.elapsed += dt;
+      if (el.elapsed >= el.durations[el.phase]) {
+        el.elapsed = 0;
+        el.phase = (el.phase + 1) % 4;
+        if (el.phase === 3) {
+          el.cornerIdx = (el.cornerIdx + 1) % 4;
+          el.targetX = CORNERS[el.cornerIdx].x;
+          el.targetY = CORNERS[el.cornerIdx].y;
+        }
+      }
+      const t = Math.min(1, el.elapsed / el.durations[el.phase]);
+      if (el.phase === 3) {
+        const ease = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2) / 2;
+        el.x += (el.targetX - el.x) * ease * 0.08;
+        el.y += (el.targetY - el.y) * ease * 0.08;
+      }
+      if (el.phase === 0 && el.elapsed < 100) {
+        el.x = el.targetX; el.y = el.targetY;
+      }
+      if (el.phase === 0) return t;
+      if (el.phase === 1) return 1;
+      if (el.phase === 2) return 1 - t;
+      return 0;
+    }
+
+    // ── Element states (each starts in a different corner, different hold times) ──
+    const metatronState  = createElementState(0, 20000); // bottom-left, 20s hold
+    const spiralState    = createElementState(1, 16000); // bottom-right, 16s hold
+    const yantraState    = createElementState(2, 18000); // top-right, 18s hold
+    const platonicState  = createElementState(3, 15000); // top-left, 15s hold
+
+    // ══════════════════════════════════════════════════════════════════════
+    // METATRON'S CUBE RENDERER
+    // ══════════════════════════════════════════════════════════════════════
+    const MET_RINGS = [
+      { r: 0, count: 1 }, { r: 0.11, count: 6 },
+      { r: 0.22, count: 6 }, { r: 0.33, count: 6 }, { r: 0.42, count: 12 },
+    ];
+    const FOL_RADII = [0.11, 0.08, 0.065, 0.05, 0.03];
+
+    function getMetCircles(ts) {
+      const circles = [];
+      const rots = [0, -(ts/90000)*TWO_PI, (ts/120000)*TWO_PI, -(ts/150000)*TWO_PI, (ts/200000)*TWO_PI];
+      for (let ri = 0; ri < MET_RINGS.length; ri++) {
+        const ring = MET_RINGS[ri];
+        for (let i = 0; i < ring.count; i++) {
+          const a = rots[ri] + (i * TWO_PI) / ring.count;
+          circles.push({ x: ring.r === 0 ? 0 : Math.cos(a)*ring.r, y: ring.r === 0 ? 0 : Math.sin(a)*ring.r, ring: ri });
+        }
+      }
+      return circles;
+    }
+
+    function getMetLines(circles) {
+      const lines = [];
+      let idx = 0;
+      for (const ring of MET_RINGS) { if (ring.count > 1) { for (let i = 0; i < ring.count; i++) lines.push([idx+i, idx+((i+1)%ring.count)]); } idx += ring.count; }
+      for (let i = 1; i <= 6; i++) lines.push([0, i]);
+      for (let i = 0; i < 6; i++) { lines.push([1+i, 7+i]); lines.push([1+i, 7+((i+1)%6)]); }
+      for (let i = 0; i < 6; i++) { lines.push([7+i, 13+i]); lines.push([7+i, 13+((i+1)%6)]); }
+      for (let i = 0; i < 6; i++) { lines.push([13+i, 19+(i*2)]); lines.push([13+i, 19+(i*2+1)]); }
+      for (let i = 0; i < 3; i++) lines.push([1+i, 1+i+3]);
+      return lines;
+    }
+
+    function drawMetatron(ts, pcx, pcy, size, alpha) {
+      const breathe = 0.5 + 0.5 * Math.sin(ts / 12500);
+      const breathe2 = 0.5 + 0.5 * Math.sin(ts / 8000 + 1.5);
+      const circles = getMetCircles(ts);
+      const lines = getMetLines(circles);
+
+      // Aura
+      const auraR = size * 0.5;
+      const aura = ctx.createRadialGradient(pcx, pcy, size*0.1, pcx, pcy, auraR);
+      aura.addColorStop(0, `rgba(232,184,75,${0.025*alpha})`);
+      aura.addColorStop(0.6, `rgba(180,140,60,${0.012*alpha})`);
+      aura.addColorStop(1, "rgba(232,184,75,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,auraR,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
+
+      // Flower of Life circles
+      for (let i = 0; i < circles.length; i++) {
+        const c = circles[i];
+        const px = pcx+c.x*size, py = pcy+c.y*size;
+        const pulse = 1 + 0.08*Math.sin(ts/5000+i*0.4);
+        const r = (FOL_RADII[c.ring]||0.03)*size*pulse;
+        const a = ([0.07,0.06,0.05,0.04,0.025][c.ring]||0.03 + breathe*0.03)*alpha;
+        ctx.beginPath(); ctx.arc(px,py,r,0,TWO_PI);
+        ctx.strokeStyle=`rgba(232,184,75,${a})`; ctx.lineWidth=0.35; ctx.stroke();
+      }
+
+      // Lines
+      const bla = (0.04+breathe*0.05)*alpha;
+      for (const [i,j] of lines) {
+        if (i>=circles.length||j>=circles.length) continue;
+        const c1=circles[i],c2=circles[j];
+        const avgR=(c1.ring+c2.ring)/2;
+        ctx.beginPath(); ctx.moveTo(pcx+c1.x*size,pcy+c1.y*size); ctx.lineTo(pcx+c2.x*size,pcy+c2.y*size);
+        ctx.strokeStyle=`rgba(232,184,75,${bla*(1-avgR*0.15)})`; ctx.lineWidth=avgR<1?0.6:0.35; ctx.stroke();
+      }
+
+      // Vertex dots
+      for (let i = 0; i < circles.length; i++) {
+        const c=circles[i], px=pcx+c.x*size, py=pcy+c.y*size;
+        const dotR=[2.5,2,1.5,1.2,0.8][c.ring]||1, dotA=[0.5,0.4,0.3,0.2,0.12][c.ring]||0.15;
+        const haloR=dotR*4;
+        const halo=ctx.createRadialGradient(px,py,0,px,py,haloR);
+        halo.addColorStop(0,`rgba(232,184,75,${dotA*alpha*breathe2})`); halo.addColorStop(1,"rgba(232,184,75,0)");
+        ctx.beginPath(); ctx.arc(px,py,haloR,0,TWO_PI); ctx.fillStyle=halo; ctx.fill();
+        ctx.beginPath(); ctx.arc(px,py,dotR,0,TWO_PI); ctx.fillStyle=`rgba(255,230,160,${dotA*alpha})`; ctx.fill();
+      }
+
+      // Star of David triangles
+      const triRot1=(ts/25000)*TWO_PI, triR=size*0.18, triA=(0.04+breathe*0.03)*alpha;
+      for (let t=0;t<2;t++) {
+        const rot=t===0?triRot1:-triRot1;
+        ctx.beginPath();
+        for (let i=0;i<=3;i++) { const a=rot+(i*TWO_PI)/3-Math.PI/2; const tx=pcx+Math.cos(a)*triR,ty=pcy+Math.sin(a)*triR; i===0?ctx.moveTo(tx,ty):ctx.lineTo(tx,ty); }
+        ctx.closePath(); ctx.strokeStyle=`rgba(232,184,75,${triA})`; ctx.lineWidth=0.5; ctx.stroke();
+      }
+
+      // Outer circle + ticks
+      const ocR=size*0.44, ocRot=(ts/60000)*TWO_PI;
+      ctx.beginPath(); ctx.arc(pcx,pcy,ocR,0,TWO_PI);
+      ctx.strokeStyle=`rgba(232,184,75,${0.025*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
+      for (let i=0;i<12;i++) {
+        const a=ocRot+(i*TWO_PI)/12;
+        ctx.beginPath(); ctx.moveTo(pcx+Math.cos(a)*(ocR-3),pcy+Math.sin(a)*(ocR-3));
+        ctx.lineTo(pcx+Math.cos(a)*(ocR+3),pcy+Math.sin(a)*(ocR+3));
+        ctx.strokeStyle=`rgba(232,184,75,${0.04*alpha})`; ctx.lineWidth=0.4; ctx.stroke();
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // GOLDEN RATIO SPIRAL RENDERER
+    // ══════════════════════════════════════════════════════════════════════
+    function drawGoldenSpiral(ts, pcx, pcy, size, alpha) {
+      const rot = (ts / 40000) * TWO_PI; // slow rotation
+      const breathe = 0.5 + 0.5 * Math.sin(ts / 10000);
+      const PHI = 1.618033988749;
+
+      // Aura
+      const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,size*0.45);
+      aura.addColorStop(0,`rgba(74,184,232,${0.02*alpha})`);
+      aura.addColorStop(1,"rgba(74,184,232,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.45,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
+
+      ctx.save();
+      ctx.translate(pcx, pcy);
+      ctx.rotate(rot);
+
+      // Golden rectangles — subdividing inward
+      let rw = size * 0.4, rh = rw / PHI;
+      let ox = 0, oy = 0;
+      const rectAlpha = (0.04 + breathe * 0.03) * alpha;
+
+      for (let i = 0; i < 8; i++) {
+        ctx.strokeStyle = `rgba(74,184,232,${rectAlpha * (1 - i * 0.08)})`;
+        ctx.lineWidth = 0.4;
+        ctx.strokeRect(ox - rw/2, oy - rh/2, rw, rh);
+
+        // Quarter-circle arc in each rectangle
+        const arcR = Math.min(rw, rh);
+        const arcCx = ox + (i%4===0 ? -rw/2 : i%4===1 ? rw/2 : i%4===2 ? rw/2 : -rw/2);
+        const arcCy = oy + (i%4===0 ? -rh/2 : i%4===1 ? -rh/2 : i%4===2 ? rh/2 : rh/2);
+        const startA = (i%4) * Math.PI/2;
+        ctx.beginPath();
+        ctx.arc(arcCx, arcCy, arcR, startA, startA + Math.PI/2);
+        ctx.strokeStyle = `rgba(74,184,232,${(0.06 + breathe*0.04) * alpha * (1 - i*0.06)})`;
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+
+        // Subdivide
+        const newW = rh;
+        const newH = rw - rh;
+        if (i%4===0) { ox += (rw - newW)/2; oy -= (rh - newH)/2; }
+        else if (i%4===1) { ox += (rw - newW)/2; oy += (rh - newH)/2; }
+        else if (i%4===2) { ox -= (rw - newW)/2; oy += (rh - newH)/2; }
+        else { ox -= (rw - newW)/2; oy -= (rh - newH)/2; }
+        rw = newW; rh = newH > 0 ? newH : rh * 0.618;
+        if (rw < 2 || rh < 2) break;
+      }
+
+      // Fibonacci spiral (smooth logarithmic)
+      ctx.beginPath();
+      const spiralTurns = 4;
+      const spiralPoints = 200;
+      for (let i = 0; i <= spiralPoints; i++) {
+        const t = i / spiralPoints;
+        const angle = t * spiralTurns * TWO_PI;
+        const r = size * 0.01 * Math.pow(PHI, angle / (Math.PI/2));
+        if (r > size * 0.45) break;
+        const sx = Math.cos(angle) * r;
+        const sy = Math.sin(angle) * r;
+        i === 0 ? ctx.moveTo(sx, sy) : ctx.lineTo(sx, sy);
+      }
+      ctx.strokeStyle = `rgba(74,184,232,${(0.08 + breathe*0.05) * alpha})`;
+      ctx.lineWidth = 0.6;
+      ctx.stroke();
+
+      // Phi ratio markers — small dots along spiral
+      for (let i = 1; i <= 6; i++) {
+        const angle = i * Math.PI/2;
+        const r = size * 0.01 * Math.pow(PHI, angle / (Math.PI/2));
+        if (r > size * 0.45) break;
+        const sx = Math.cos(angle) * r, sy = Math.sin(angle) * r;
+        const dotR = 1.5 - i * 0.15;
+        const halo = ctx.createRadialGradient(sx,sy,0,sx,sy,dotR*3);
+        halo.addColorStop(0,`rgba(74,184,232,${0.3*alpha})`); halo.addColorStop(1,"rgba(74,184,232,0)");
+        ctx.beginPath(); ctx.arc(sx,sy,dotR*3,0,TWO_PI); ctx.fillStyle=halo; ctx.fill();
+        ctx.beginPath(); ctx.arc(sx,sy,dotR,0,TWO_PI); ctx.fillStyle=`rgba(140,220,255,${0.5*alpha})`; ctx.fill();
+      }
+
+      ctx.restore();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // SRI YANTRA RENDERER
+    // ══════════════════════════════════════════════════════════════════════
+    function drawSriYantra(ts, pcx, pcy, size, alpha) {
+      const breathe = 0.5 + 0.5 * Math.sin(ts / 15000);
+      const innerRot = (ts / 80000) * TWO_PI;
+
+      // Aura
+      const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,size*0.48);
+      aura.addColorStop(0,`rgba(176,74,220,${0.02*alpha})`);
+      aura.addColorStop(1,"rgba(176,74,220,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.48,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
+
+      // Outer lotus petals (16 petals in outer ring, 8 in inner)
+      for (let ring = 0; ring < 2; ring++) {
+        const petalCount = ring === 0 ? 16 : 8;
+        const petalR = size * (ring === 0 ? 0.42 : 0.34);
+        const petalW = TWO_PI / petalCount * 0.4;
+        const baseRot = ring === 0 ? innerRot * 0.3 : -innerRot * 0.4;
+        const pa = (0.03 + breathe * 0.02) * alpha;
+
+        for (let i = 0; i < petalCount; i++) {
+          const a = baseRot + (i * TWO_PI) / petalCount;
+          const tip = petalR + size * 0.04;
+          ctx.beginPath();
+          ctx.moveTo(pcx + Math.cos(a - petalW) * petalR, pcy + Math.sin(a - petalW) * petalR);
+          ctx.quadraticCurveTo(pcx + Math.cos(a) * tip, pcy + Math.sin(a) * tip,
+                                pcx + Math.cos(a + petalW) * petalR, pcy + Math.sin(a + petalW) * petalR);
+          ctx.strokeStyle = `rgba(176,74,220,${pa})`;
+          ctx.lineWidth = 0.35;
+          ctx.stroke();
+        }
+      }
+
+      // Concentric circles (3)
+      for (let i = 0; i < 3; i++) {
+        const r = size * (0.30 - i * 0.05);
+        ctx.beginPath(); ctx.arc(pcx, pcy, r, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(176,74,220,${(0.04 + breathe*0.02)*alpha})`;
+        ctx.lineWidth = 0.3; ctx.stroke();
+      }
+
+      // 9 interlocking triangles (the core yantra)
+      // 4 upward triangles, 5 downward — at varying sizes, counter-rotating
+      const triSets = [
+        { dir: 1, scales: [0.26, 0.20, 0.14, 0.08], rot: innerRot },
+        { dir: -1, scales: [0.24, 0.18, 0.12, 0.06, 0.03], rot: -innerRot * 1.2 },
+      ];
+
+      for (const set of triSets) {
+        for (let si = 0; si < set.scales.length; si++) {
+          const s = set.scales[si];
+          const r = size * s;
+          const rot = set.rot + si * 0.15;
+          const ta = (0.05 + breathe * 0.04) * alpha * (1 - si * 0.12);
+
+          ctx.beginPath();
+          for (let i = 0; i <= 3; i++) {
+            const a = rot + set.dir * ((i * TWO_PI) / 3 - Math.PI / 2);
+            const tx = pcx + Math.cos(a) * r;
+            const ty = pcy + Math.sin(a) * r;
+            i === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = `rgba(176,74,220,${ta})`;
+          ctx.lineWidth = 0.4;
+          ctx.stroke();
+        }
+      }
+
+      // Central bindu (point)
+      const binduPulse = 1 + 0.3 * Math.sin(ts / 3000);
+      const binduR = 2.5 * binduPulse;
+      const binduHalo = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,binduR*4);
+      binduHalo.addColorStop(0,`rgba(220,160,255,${0.4*alpha})`);
+      binduHalo.addColorStop(1,"rgba(176,74,220,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,binduR*4,0,TWO_PI); ctx.fillStyle=binduHalo; ctx.fill();
+      ctx.beginPath(); ctx.arc(pcx,pcy,binduR,0,TWO_PI);
+      ctx.fillStyle=`rgba(240,200,255,${0.6*alpha})`; ctx.fill();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // PLATONIC SOLIDS RENDERER (rotating 3D wireframes → 2D projection)
+    // ══════════════════════════════════════════════════════════════════════
+    // Cycle: tetrahedron → cube → octahedron → dodecahedron → icosahedron
+    const PHI_P = 1.618033988749;
+    const PLATONIC = [
+      { name: "tetrahedron", verts: [[1,1,1],[-1,-1,1],[-1,1,-1],[1,-1,-1]],
+        edges: [[0,1],[0,2],[0,3],[1,2],[1,3],[2,3]] },
+      { name: "cube", verts: [[-1,-1,-1],[1,-1,-1],[1,1,-1],[-1,1,-1],[-1,-1,1],[1,-1,1],[1,1,1],[-1,1,1]],
+        edges: [[0,1],[1,2],[2,3],[3,0],[4,5],[5,6],[6,7],[7,4],[0,4],[1,5],[2,6],[3,7]] },
+      { name: "octahedron", verts: [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]],
+        edges: [[0,2],[0,3],[0,4],[0,5],[1,2],[1,3],[1,4],[1,5],[2,4],[2,5],[3,4],[3,5]] },
+      { name: "icosahedron", verts: [[0,1,PHI_P],[0,-1,PHI_P],[0,1,-PHI_P],[0,-1,-PHI_P],
+          [1,PHI_P,0],[-1,PHI_P,0],[1,-PHI_P,0],[-1,-PHI_P,0],
+          [PHI_P,0,1],[-PHI_P,0,1],[PHI_P,0,-1],[-PHI_P,0,-1]],
+        edges: [[0,1],[0,4],[0,5],[0,8],[0,9],[1,6],[1,7],[1,8],[1,9],[2,3],[2,4],[2,5],[2,10],[2,11],
+          [3,6],[3,7],[3,10],[3,11],[4,5],[4,8],[4,10],[5,9],[5,11],[6,7],[6,8],[6,10],[7,9],[7,11],[8,10],[9,11]] },
+    ];
+    let platonicIdx = 0;
+    let platonicTimer = 0;
+    const PLATONIC_SWITCH = 8000; // switch shape every 8s
+
+    function project3D(x, y, z, rotX, rotY, rotZ) {
+      // Rotate around Y
+      let x1 = x*Math.cos(rotY) - z*Math.sin(rotY);
+      let z1 = x*Math.sin(rotY) + z*Math.cos(rotY);
+      // Rotate around X
+      let y1 = y*Math.cos(rotX) - z1*Math.sin(rotX);
+      let z2 = y*Math.sin(rotX) + z1*Math.cos(rotX);
+      // Rotate around Z
+      let x2 = x1*Math.cos(rotZ) - y1*Math.sin(rotZ);
+      let y2 = x1*Math.sin(rotZ) + y1*Math.cos(rotZ);
+      // Simple perspective
+      const d = 4;
+      const scale = d / (d + z2);
+      return { x: x2 * scale, y: y2 * scale, z: z2 };
+    }
+
+    function drawPlatonicSolids(ts, dt, pcx, pcy, size, alpha) {
+      platonicTimer += dt;
+      if (platonicTimer >= PLATONIC_SWITCH) {
+        platonicTimer = 0;
+        platonicIdx = (platonicIdx + 1) % PLATONIC.length;
+      }
+      const breathe = 0.5 + 0.5 * Math.sin(ts / 11000);
+      const shape = PLATONIC[platonicIdx];
+
+      // Aura
+      const aura = ctx.createRadialGradient(pcx,pcy,0,pcx,pcy,size*0.4);
+      aura.addColorStop(0,`rgba(94,232,176,${0.015*alpha})`);
+      aura.addColorStop(1,"rgba(94,232,176,0)");
+      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.4,0,TWO_PI); ctx.fillStyle=aura; ctx.fill();
+
+      const rotX = ts * 0.0003;
+      const rotY = ts * 0.0005;
+      const rotZ = ts * 0.0002;
+      const scale = size * 0.12;
+
+      // Normalize vertex distances
+      const maxDist = Math.max(...shape.verts.map(v => Math.sqrt(v[0]*v[0]+v[1]*v[1]+v[2]*v[2])));
+      const normScale = scale / maxDist;
+
+      // Project all vertices
+      const projected = shape.verts.map(v => project3D(v[0]*normScale, v[1]*normScale, v[2]*normScale, rotX, rotY, rotZ));
+
+      // Draw edges
+      const lineA = (0.06 + breathe * 0.05) * alpha;
+      ctx.lineWidth = 0.5;
+      for (const [i, j] of shape.edges) {
+        const a = projected[i], b = projected[j];
+        // Depth-based alpha (closer = brighter)
+        const avgZ = (a.z + b.z) / 2;
+        const depthFade = 0.5 + 0.5 * Math.max(0, Math.min(1, (avgZ + scale) / (scale * 2)));
+        ctx.beginPath();
+        ctx.moveTo(pcx + a.x, pcy + a.y);
+        ctx.lineTo(pcx + b.x, pcy + b.y);
+        ctx.strokeStyle = `rgba(94,232,176,${lineA * depthFade})`;
+        ctx.stroke();
+      }
+
+      // Draw vertices
+      for (const p of projected) {
+        const depthFade = 0.5 + 0.5 * Math.max(0, Math.min(1, (p.z + scale) / (scale * 2)));
+        const dotR = 1.2 * depthFade + 0.5;
+        const halo = ctx.createRadialGradient(pcx+p.x,pcy+p.y,0,pcx+p.x,pcy+p.y,dotR*3);
+        halo.addColorStop(0,`rgba(94,232,176,${0.25*alpha*depthFade})`);
+        halo.addColorStop(1,"rgba(94,232,176,0)");
+        ctx.beginPath(); ctx.arc(pcx+p.x,pcy+p.y,dotR*3,0,TWO_PI); ctx.fillStyle=halo; ctx.fill();
+        ctx.beginPath(); ctx.arc(pcx+p.x,pcy+p.y,dotR,0,TWO_PI);
+        ctx.fillStyle=`rgba(160,255,220,${0.4*alpha*depthFade})`; ctx.fill();
+      }
+
+      // Outer containment circle
+      ctx.beginPath(); ctx.arc(pcx,pcy,size*0.35,0,TWO_PI);
+      ctx.strokeStyle=`rgba(94,232,176,${0.02*alpha})`; ctx.lineWidth=0.3; ctx.stroke();
+    }
+
+    // ══════════════════════════════════════════════════════════════════════
+    // MAIN DRAW LOOP
+    // ══════════════════════════════════════════════════════════════════════
     let lt = 0, raf;
-    const TWO_PI = Math.PI * 2;
 
     const draw = (ts) => {
       if (!lt) lt = ts;
       const dt = ts - lt;
       lt = ts;
-      phaseElapsed += dt;
       W = canvas.offsetWidth; H = canvas.offsetHeight;
       ctx.clearRect(0, 0, W, H);
-
       const S = Math.min(W, H);
 
-      // ── Phase machine ──────────────────────────────────────────────────
-      if (phaseElapsed >= PHASE_DUR[cubePhase]) {
-        phaseElapsed = 0;
-        cubePhase = (cubePhase + 1) % 4;
-        if (cubePhase === 3) {
-          // Pick next corner
-          cornerIdx = (cornerIdx + 1) % CORNERS.length;
-          targetX = CORNERS[cornerIdx].x;
-          targetY = CORNERS[cornerIdx].y;
-        }
-      }
+      // Tick all element state machines
+      const metAlpha  = tickElement(metatronState, dt);
+      const spirAlpha = tickElement(spiralState, dt);
+      const yanAlpha  = tickElement(yantraState, dt);
+      const platAlpha = tickElement(platonicState, dt);
 
-      // Cube opacity based on phase
-      let cubeAlpha;
-      const t = Math.min(1, phaseElapsed / PHASE_DUR[cubePhase]);
-      if (cubePhase === 0) cubeAlpha = t;                    // fade in
-      else if (cubePhase === 1) cubeAlpha = 1;               // full
-      else if (cubePhase === 2) cubeAlpha = 1 - t;           // fade out
-      else cubeAlpha = 0;                                     // traveling (invisible)
-
-      // Smooth travel during phase 3
-      if (cubePhase === 3) {
-        const ease = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2) / 2;
-        cubeX = cubeX + (targetX - cubeX) * ease * 0.08;
-        cubeY = cubeY + (targetY - cubeY) * ease * 0.08;
-      }
-      if (cubePhase === 0 && phaseElapsed < 100) {
-        cubeX = targetX; cubeY = targetY; // snap to target on arrival
-      }
-
-      // ── L1: Particles ──────────────────────────────────────────────────
+      // Particles
       for (const p of particles) {
         p.y += p.vy;
-        p.x += p.vx + Math.sin(ts * 0.00015 + p.ph) * 0.00015;
+        p.x += p.vx + Math.sin(ts*0.00015+p.ph)*0.00015;
         if (p.y < -0.02) { p.y = 1.02; p.x = Math.random(); }
         p.ph += p.sp * dt;
-        const a = p.baseA * (0.5 + 0.5 * Math.sin(p.ph));
-        ctx.beginPath();
-        ctx.arc(p.x * W, p.y * H, p.r, 0, TWO_PI);
-        ctx.fillStyle = `rgba(180, 200, 240, ${a})`;
-        ctx.fill();
+        const a = p.baseA * (0.5+0.5*Math.sin(p.ph));
+        ctx.beginPath(); ctx.arc(p.x*W, p.y*H, p.r, 0, TWO_PI);
+        ctx.fillStyle = `rgba(180,200,240,${a})`; ctx.fill();
       }
 
-      // ── Metatron's Cube (only when visible) ────────────────────────────
-      if (cubeAlpha > 0.01) {
-        const pcx = cubeX * W;
-        const pcy = cubeY * H;
-        const cubeSize = S * 0.32; // compact size
+      // Draw each element at its current position
+      const eSize = S * 0.32;
 
-        const breathe = 0.5 + 0.5 * Math.sin(ts / 12500);
-        const breathe2 = 0.5 + 0.5 * Math.sin(ts / 8000 + 1.5);
-
-        const circles = getCircles(ts);
-        const lines = getMetLines(circles);
-
-        // ── Outer aura glow ──────────────────────────────────────────────
-        const auraR = cubeSize * 0.5;
-        const aura = ctx.createRadialGradient(pcx, pcy, cubeSize * 0.1, pcx, pcy, auraR);
-        aura.addColorStop(0, `rgba(232, 184, 75, ${0.025 * cubeAlpha})`);
-        aura.addColorStop(0.6, `rgba(180, 140, 60, ${0.012 * cubeAlpha})`);
-        aura.addColorStop(1, "rgba(232, 184, 75, 0)");
-        ctx.beginPath();
-        ctx.arc(pcx, pcy, auraR, 0, TWO_PI);
-        ctx.fillStyle = aura;
-        ctx.fill();
-
-        // ── Flower of Life circles (the overlapping circle pattern) ──────
-        for (let i = 0; i < circles.length; i++) {
-          const c = circles[i];
-          const px = pcx + c.x * cubeSize;
-          const py = pcy + c.y * cubeSize;
-          const ringIdx = c.ring;
-          const baseR = FOL_RADII[ringIdx] || 0.03;
-          const pulse = 1 + 0.08 * Math.sin(ts / 5000 + i * 0.4);
-          const r = baseR * cubeSize * pulse;
-          const ringAlpha = [0.07, 0.06, 0.05, 0.04, 0.025][ringIdx] || 0.03;
-          const a = (ringAlpha + breathe * 0.03) * cubeAlpha;
-          ctx.beginPath();
-          ctx.arc(px, py, r, 0, TWO_PI);
-          ctx.strokeStyle = `rgba(232, 184, 75, ${a})`;
-          ctx.lineWidth = 0.35;
-          ctx.stroke();
-        }
-
-        // ── Connecting lines — layered by ring distance ──────────────────
-        const baseLineAlpha = (0.04 + breathe * 0.05) * cubeAlpha;
-        for (const [i, j] of lines) {
-          if (i >= circles.length || j >= circles.length) continue;
-          const c1 = circles[i], c2 = circles[j];
-          const px1 = pcx + c1.x * cubeSize, py1 = pcy + c1.y * cubeSize;
-          const px2 = pcx + c2.x * cubeSize, py2 = pcy + c2.y * cubeSize;
-          // Inner connections brighter, outer dimmer
-          const avgRing = (c1.ring + c2.ring) / 2;
-          const ringFade = 1 - avgRing * 0.15;
-          ctx.beginPath();
-          ctx.moveTo(px1, py1);
-          ctx.lineTo(px2, py2);
-          ctx.strokeStyle = `rgba(232, 184, 75, ${baseLineAlpha * ringFade})`;
-          ctx.lineWidth = avgRing < 1 ? 0.6 : 0.35;
-          ctx.stroke();
-        }
-
-        // ── Vertex dots — small bright points at each circle center ──────
-        for (let i = 0; i < circles.length; i++) {
-          const c = circles[i];
-          const px = pcx + c.x * cubeSize;
-          const py = pcy + c.y * cubeSize;
-          const ringIdx = c.ring;
-          const dotR = [2.5, 2, 1.5, 1.2, 0.8][ringIdx] || 1;
-          const dotA = [0.5, 0.4, 0.3, 0.2, 0.12][ringIdx] || 0.15;
-
-          // Halo
-          const haloR = dotR * 4;
-          const halo = ctx.createRadialGradient(px, py, 0, px, py, haloR);
-          halo.addColorStop(0, `rgba(232, 184, 75, ${dotA * cubeAlpha * breathe2})`);
-          halo.addColorStop(1, "rgba(232, 184, 75, 0)");
-          ctx.beginPath();
-          ctx.arc(px, py, haloR, 0, TWO_PI);
-          ctx.fillStyle = halo;
-          ctx.fill();
-
-          // Core dot
-          ctx.beginPath();
-          ctx.arc(px, py, dotR, 0, TWO_PI);
-          ctx.fillStyle = `rgba(255, 230, 160, ${dotA * cubeAlpha})`;
-          ctx.fill();
-        }
-
-        // ── Spinning inner triangles (Star of David) ─────────────────────
-        const triRot1 = (ts / 25000) * TWO_PI;
-        const triRot2 = -(ts / 25000) * TWO_PI;
-        const triR = cubeSize * 0.18;
-        const triAlpha = (0.04 + breathe * 0.03) * cubeAlpha;
-        for (let t = 0; t < 2; t++) {
-          const rot = t === 0 ? triRot1 : triRot2;
-          ctx.beginPath();
-          for (let i = 0; i <= 3; i++) {
-            const a = rot + (i * TWO_PI) / 3 - Math.PI / 2;
-            const tx = pcx + Math.cos(a) * triR;
-            const ty = pcy + Math.sin(a) * triR;
-            i === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
-          }
-          ctx.closePath();
-          ctx.strokeStyle = `rgba(232, 184, 75, ${triAlpha})`;
-          ctx.lineWidth = 0.5;
-          ctx.stroke();
-        }
-
-        // ── Outermost containment circle ─────────────────────────────────
-        const outerCircleR = cubeSize * 0.44;
-        const outerRot = (ts / 60000) * TWO_PI;
-        ctx.beginPath();
-        ctx.arc(pcx, pcy, outerCircleR, 0, TWO_PI);
-        ctx.strokeStyle = `rgba(232, 184, 75, ${0.025 * cubeAlpha})`;
-        ctx.lineWidth = 0.3;
-        ctx.stroke();
-
-        // Tick marks on outer circle (12 hour positions)
-        for (let i = 0; i < 12; i++) {
-          const a = outerRot + (i * TWO_PI) / 12;
-          const ix = pcx + Math.cos(a) * (outerCircleR - 3);
-          const iy = pcy + Math.sin(a) * (outerCircleR - 3);
-          const ox = pcx + Math.cos(a) * (outerCircleR + 3);
-          const oy = pcy + Math.sin(a) * (outerCircleR + 3);
-          ctx.beginPath();
-          ctx.moveTo(ix, iy);
-          ctx.lineTo(ox, oy);
-          ctx.strokeStyle = `rgba(232, 184, 75, ${0.04 * cubeAlpha})`;
-          ctx.lineWidth = 0.4;
-          ctx.stroke();
-        }
-      }
+      if (metAlpha > 0.01)  drawMetatron(ts, metatronState.x*W, metatronState.y*H, eSize, metAlpha);
+      if (spirAlpha > 0.01) drawGoldenSpiral(ts, spiralState.x*W, spiralState.y*H, eSize, spirAlpha);
+      if (yanAlpha > 0.01)  drawSriYantra(ts, yantraState.x*W, yantraState.y*H, eSize, yanAlpha);
+      if (platAlpha > 0.01) drawPlatonicSolids(ts, dt, platonicState.x*W, platonicState.y*H, eSize, platAlpha);
 
       raf = requestAnimationFrame(draw);
     };
@@ -325,6 +505,7 @@ function SacredGeometryCanvas() {
     }} />
   );
 }
+
 
 // ── Greek Throne SVG ─────────────────────────────────────────────────────────
 function GreekThrone({ color, size, glow }) {
