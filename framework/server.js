@@ -157,6 +157,35 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'olympus-framework', ts: Date.now() });
 });
 
+
+// ── Mission title generation (Haiku) ──────────────────────────────────────────
+app.post("/api/name", express.json(), async (req, res) => {
+  const { message } = req.body;
+  if (!message) return res.json({ title: null });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.json({ title: null });
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-haiku-4-5-20251001",
+        max_tokens: 20,
+        messages: [{ role: "user", content: `You are a title generator. Given a user request, produce a concise 2-4 word title that captures the core action and subject. Rules: no articles (a/the), no filler words, no punctuation, no quotes. Use title case. Examples: Deploy Auth Middleware, Fix Sidebar Overflow, Scripture Pattern Analysis, Update Dashboard Fonts, Telegram Bot Config. Now title this:\n\n${message.slice(0, 500)}` }],
+      }),
+    });
+    const data = await r.json();
+    const title = data?.content?.[0]?.text?.trim() || null;
+    res.json({ title });
+  } catch {
+    res.json({ title: null });
+  }
+});
+
 // ── B3C Request entry point ───────────────────────────────────────────────────
 app.post('/request', (req, res) => {
   const { text, channel, target = 'zeus', userId, isWarRoom, priority, messages } = req.body ?? {};

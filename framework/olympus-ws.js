@@ -25,6 +25,15 @@ import { WebSocketServer } from 'ws';
 let wss = null;
 const subscribers = new Set();
 
+// ── Ring buffer for replay on reconnect ──────────────────────────────────────
+const RING_SIZE = 50;
+const ringBuffer = [];
+
+function ringPush(event) {
+  ringBuffer.push(event);
+  if (ringBuffer.length > RING_SIZE) ringBuffer.shift();
+}
+
 export function subscribe(fn)   { subscribers.add(fn); }
 export function unsubscribe(fn) { subscribers.delete(fn); }
 
@@ -34,6 +43,11 @@ export function initWS(httpServer) {
   wss.on('connection', (ws, req) => {
     const ip = req.socket.remoteAddress;
     console.log(`[WS] Dashboard connected from ${ip}`);
+
+    // Replay recent events so late-joining clients catch up
+    for (const evt of ringBuffer) {
+      try { ws.send(JSON.stringify(evt)); } catch {}
+    }
 
     ws.on('close', () => {
       console.log(`[WS] Dashboard disconnected from ${ip}`);
@@ -59,6 +73,7 @@ export function broadcast(event) {
   //
   // With WS delivery first: every event reaches the dashboard synchronously
   // before any downstream effects (slot release, new mission start) run.
+  ringPush(event);
   if (wss) {
     const payload = JSON.stringify(event);
     for (const client of wss.clients) {

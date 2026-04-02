@@ -1,8 +1,43 @@
+# Dependencies
 node_modules/
+
+# Build output
+dashboard/dist/
 dist/
+
+# Secrets
 .env
+.env.*
+
+# OS
 .DS_Store
+
+# Logs
 *.log
 .pm2/
+
+# Backups
 *.bak
+
+# Legacy
 framework.git/
+
+# Submodule / runtime dirs
+zeus/
+hades/
+
+# Runtime data stores
+data/
+gaia/observations/
+gaia/council-log.json
+gaia/retrospectives.json
+
+# Probe identity (keys)
+framework/.probe-identity/
+
+# Debug/test scripts
+framework/ws_debug.mjs
+framework/ws_quorum_test.mjs
+
+# Tools (shell scripts / python utils - runtime)
+tools/

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import OlympusView from "./OlympusView";
+import CouncilChamber from "./CouncilChamber";
 
 function StarField() {
   const canvasRef = useRef(null);
@@ -48,6 +49,27 @@ function StarField() {
 }
 
 const FONTS = `@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@700&family=JetBrains+Mono:wght@300;400;500&display=swap');`;
+
+
+// ── Smart naming utility ─────────────────────────────────────────────────────
+function smartNameFallback(text, maxWords = 5) {
+  if (!text) return "Untitled";
+  let clean = text.replace(/^(Message from \w+:\s*|ZEUS PROTOCOL:\s*)/i, "").trim();
+  const words = clean.split(/\s+/).filter(w => w.length > 2).slice(0, maxWords);
+  if (words.length === 0) return clean.slice(0, 30) || "Untitled";
+  let name = words.join(" ");
+  if (name.length > 40) name = name.slice(0, 37) + "\u2026";
+  return name;
+}
+
+
+// ── Quorum mapping ───────────────────────────────────────────────────────────
+const QUORUM_MAP = {
+  ZEUS:     ["Hermes", "Athena", "Apollo", "Hestia"],
+  POSEIDON: ["Aphrodite", "Iris", "Demeter", "Prometheus"],
+  HADES:    ["Hephaestus", "Nike", "Artemis", "Ares"],
+  GAIA:     [],
+};
 
 const css = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -182,7 +204,7 @@ const css = `
 
   .logo {
     font-family: 'Cinzel Decorative', serif;
-    font-size: 15px;
+    font-size: 17px;
     color: var(--gold2);
     letter-spacing: 0.18em;
     display: flex;
@@ -198,7 +220,7 @@ const css = `
     display: flex; align-items: center; gap: 6px;
     padding: 5px 14px; border-radius: 4px;
     background: rgba(9,12,24,0.8); border: 1px solid var(--border);
-    font-size: 10px; letter-spacing: 0.1em; font-weight: 500;
+    font-size: 12px; letter-spacing: 0.1em; font-weight: 500;
     transition: all 0.4s;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03);
   }
@@ -209,12 +231,12 @@ const css = `
   .node-chip.offline .dot { background: #ff5050; box-shadow: 0 0 8px #ff5050; }
   @keyframes pulse-dot { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 
-  .topbar-time { font-size: 10px; color: var(--muted); letter-spacing: 0.1em; }
+  .topbar-time { font-size: 12px; color: var(--muted); letter-spacing: 0.1em; }
 
   /* Mode badge */
   .mode-badge {
     font-family: 'Cinzel', serif;
-    font-size: 8px;
+    font-size: 10px;
     letter-spacing: 0.2em;
     padding: 3px 9px;
     border-radius: 3px;
@@ -231,7 +253,7 @@ const css = `
 
   /* ── Sidebar ────────────────────────────────────────────────────────── */
   .sidebar {
-    width: 256px;
+    width: 300px;
     border-right: 1px solid var(--border);
     display: flex;
     flex-direction: column;
@@ -243,21 +265,21 @@ const css = `
   }
   .sidebar-section { padding: 16px; border-bottom: 1px solid var(--border); }
   .sidebar-label {
-    font-size: 9px; letter-spacing: 0.2em; color: var(--muted);
+    font-size: 11px; letter-spacing: 0.2em; color: var(--muted);
     text-transform: uppercase; margin-bottom: 10px; font-family: 'Cinzel', serif;
   }
   .new-mission-btn {
     padding: 3px 10px;
     background: rgba(42,53,96,0.3); border: 1px solid var(--border2);
     border-radius: 3px; color: var(--text);
-    font-family: 'Cinzel', serif; font-size: 8px;
+    font-family: 'Cinzel', serif; font-size: 10px;
     letter-spacing: 0.12em; cursor: pointer; transition: all 0.2s;
   }
   .new-mission-btn:hover { border-color: var(--gold); color: var(--gold2); background: rgba(200,150,10,0.08); }
 
   .sidebar-tabs { display: flex; gap: 5px; margin-bottom: 10px; }
   .sidebar-tab {
-    flex: 1; padding: 4px 0; font-size: 8px; font-family: 'Cinzel', serif;
+    flex: 1; padding: 4px 0; font-size: 10px; font-family: 'Cinzel', serif;
     letter-spacing: 0.12em; border: 1px solid var(--border); background: transparent;
     color: var(--muted); cursor: pointer; border-radius: 2px; text-align: center;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
@@ -266,16 +288,16 @@ const css = `
   .sidebar-tab.active { background: rgba(200,150,10,0.07); border-color: var(--gold); color: var(--gold2); }
 
   .req-user-badge {
-    display: inline-block; font-size: 7px; font-family: 'Cinzel', serif;
-    letter-spacing: 0.08em; color: var(--muted); opacity: 0.7;
+    display: inline-block; font-size: 12px; font-family: 'Cinzel', serif;
+    letter-spacing: 0.08em; color: rgba(255,255,255,0.85);
     border: 1px solid var(--border); border-radius: 2px;
-    padding: 0 4px; margin-top: 3px;
+    padding: 1px 5px; margin-top: 3px;
   }
 
   .req-item {
     padding: 10px 12px; border-radius: 4px; border: 1px solid var(--border);
     margin-bottom: 6px; cursor: pointer; transition: all 0.2s;
-    background: var(--bg3); font-size: 10px; color: var(--text);
+    background: var(--bg3); font-size: 12px; color: var(--text);
   }
   .req-item:hover { border-color: var(--border2); }
   .req-item.selected { border-color: var(--gold); background: rgba(200,150,10,0.06); }
@@ -286,9 +308,9 @@ const css = `
   .req-status.active  { background: var(--active); box-shadow: 0 0 5px var(--active); animation: pulse-dot 1s ease infinite; }
   .req-status.done    { background: var(--done); }
 
-  .req-text { display: block; font-size: 10px; color: var(--text); margin-top: 4px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .req-time { font-size: 9px; color: var(--muted); margin-top: 4px; }
-  .req-tier { font-size: 8px; color: var(--muted); opacity: 0.6; font-family: 'Cinzel', serif; letter-spacing: 0.08em; margin-top: 2px; }
+  .req-text { display: block; font-size: 14px; color: var(--text); margin-top: 4px; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .req-time { font-size: 11px; color: var(--muted); margin-top: 4px; }
+  .req-tier { font-size: 13px; color: rgba(255,255,255,0.85); font-family: 'Cinzel', serif; letter-spacing: 0.08em; margin-top: 2px; }
 
   /* ── Tier 3 — Full flow area ────────────────────────────────────────── */
   .flow-area {
@@ -333,12 +355,12 @@ const css = `
 
   .node-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
   .node-symbol { font-size: 24px; line-height: 1; filter: drop-shadow(0 0 6px currentColor); }
-  .node-status-icon { font-size: 11px; color: var(--muted); }
+  .node-status-icon { font-size: 13px; color: var(--muted); }
   .node-status-icon.thinking { color: var(--active); animation: blink 1s step-end infinite; }
   .node-status-icon.done     { color: var(--done); }
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-  .node-name { font-family: 'Cinzel', serif; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; color: var(--text); margin-bottom: 3px; }
-  .node-role { font-size: 10px; color: var(--muted); letter-spacing: 0.06em; line-height: 1.3; }
+  .node-name { font-family: 'Cinzel', serif; font-size: 15px; font-weight: 600; letter-spacing: 0.12em; color: var(--text); margin-bottom: 3px; }
+  .node-role { font-size: 12px; color: var(--muted); letter-spacing: 0.06em; line-height: 1.3; }
   .node-progress { margin-top: 10px; height: 2px; background: var(--bg2); border-radius: 2px; overflow: hidden; }
   .node-progress-bar { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
   .thinking .node-progress-bar { background: linear-gradient(90deg, var(--gold), var(--gold2)); box-shadow: 0 0 8px var(--gold2); animation: progress-pulse 1.5s ease infinite; }
@@ -361,14 +383,14 @@ const css = `
   .council-node.selected { border-color: var(--gold2) !important; box-shadow: 0 0 0 1px rgba(232,184,75,0.5), 0 0 24px rgba(232,184,75,0.2), 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(232,184,75,0.1) !important; }
 
   .council-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .council-title  { font-family: 'Cinzel', serif; font-size: 12px; font-weight: 600; letter-spacing: 0.18em; color: var(--gold2); text-transform: uppercase; }
+  .council-title  { font-family: 'Cinzel', serif; font-size: 14px; font-weight: 600; letter-spacing: 0.18em; color: var(--gold2); text-transform: uppercase; }
   .council-members { display: flex; gap: 6px; }
-  .member-badge { font-size: 10px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border); font-family: 'Cinzel', serif; letter-spacing: 0.06em; }
+  .member-badge { font-size: 12px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--border); font-family: 'Cinzel', serif; letter-spacing: 0.06em; }
   .member-badge.zeus-c     { border-color: rgba(232,184,75,0.4); color: var(--zeus);     background: rgba(232,184,75,0.06); }
   .member-badge.poseidon-c { border-color: rgba(74,184,232,0.4); color: var(--poseidon); background: rgba(74,184,232,0.06); }
   .member-badge.hades-c    { border-color: rgba(176,74,220,0.4); color: var(--hades);    background: rgba(176,74,220,0.06); }
   .council-chat-preview { display: flex; flex-direction: column; gap: 4px; max-height: 84px; overflow: hidden; }
-  .chat-line { font-size: 10px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .chat-line { font-size: 12px; color: var(--muted); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .chat-line .speaker { font-weight: 500; margin-right: 4px; }
   .chat-line .speaker.zeus     { color: var(--zeus); }
   .chat-line .speaker.poseidon { color: var(--poseidon); }
@@ -378,34 +400,34 @@ const css = `
   .detail-panel { width: 380px; border-left: 1px solid var(--border); background: rgba(9,12,24,0.88); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.3s ease; overflow: hidden; backdrop-filter: blur(8px); box-shadow: inset 1px 0 0 rgba(42,53,96,0.3); }
   .detail-panel.closed { width: 0; border-left: none; }
   .panel-header { padding: 16px 18px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
-  .panel-title  { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.15em; font-weight: 600; color: var(--gold2); }
-  .panel-close  { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 6px; border-radius: 3px; transition: color 0.2s; font-family: monospace; }
+  .panel-title  { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.15em; font-weight: 600; color: var(--gold2); }
+  .panel-close  { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 2px 6px; border-radius: 3px; transition: color 0.2s; font-family: monospace; }
   .panel-close:hover { color: var(--text); }
   .panel-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
   .panel-body::-webkit-scrollbar { width: 4px; }
   .panel-body::-webkit-scrollbar-track { background: transparent; }
   .panel-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
   .panel-section { margin-bottom: 20px; }
-  .panel-section-label { font-size: 9px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; font-family: 'Cinzel', serif; }
+  .panel-section-label { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; font-family: 'Cinzel', serif; }
 
-  .thought-block { background: linear-gradient(160deg, rgba(13,18,37,0.9) 0%, rgba(7,9,20,0.95) 100%); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-size: 10px; line-height: 1.8; color: var(--text); margin-bottom: 8px; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03); }
+  .thought-block { background: linear-gradient(160deg, rgba(13,18,37,0.9) 0%, rgba(7,9,20,0.95) 100%); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-size: 12px; line-height: 1.8; color: var(--text); margin-bottom: 8px; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03); }
   .thought-block::before { content: ''; position: absolute; top: 6px; left: 0; width: 2px; height: calc(100% - 12px); border-radius: 0 2px 2px 0; background: var(--gold); box-shadow: 0 0 6px var(--gold); opacity: 0.7; }
 
   @keyframes chat-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
   .chat-message   { display: flex; gap: 8px; margin-bottom: 12px; align-items: flex-start; animation: chat-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
-  .chat-avatar    { width: 22px; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+  .chat-avatar    { width: 22px; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
   .chat-avatar.zeus     { background: rgba(232,184,75,0.15); border: 1px solid rgba(232,184,75,0.3); }
   .chat-avatar.poseidon { background: rgba(74,184,232,0.15); border: 1px solid rgba(74,184,232,0.3); }
   .chat-avatar.hades    { background: rgba(176,74,220,0.15); border: 1px solid rgba(176,74,220,0.3); }
   .chat-content { flex: 1; }
-  .chat-speaker { font-size: 9px; letter-spacing: 0.1em; font-family: 'Cinzel', serif; margin-bottom: 3px; }
+  .chat-speaker { font-size: 14px; letter-spacing: 0.1em; font-family: 'Cinzel', serif; margin-bottom: 3px; }
   .chat-speaker.zeus     { color: var(--zeus); }
   .chat-speaker.poseidon { color: var(--poseidon); }
   .chat-speaker.hades    { color: var(--hades); }
-  .chat-text { font-size: 10px; line-height: 1.7; color: var(--text); background: linear-gradient(160deg, rgba(13,18,37,0.9) 0%, rgba(7,9,20,0.95) 100%); border: 1px solid var(--border); border-radius: 5px; padding: 9px 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+  .chat-text { font-size: 12px; line-height: 1.7; color: var(--text); background: linear-gradient(160deg, rgba(13,18,37,0.9) 0%, rgba(7,9,20,0.95) 100%); border: 1px solid var(--border); border-radius: 5px; padding: 9px 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
 
-  .vote-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 3px; font-size: 9px; letter-spacing: 0.1em; margin-top: 4px; font-family: 'Cinzel', serif; }
+  .vote-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 3px; font-size: 11px; letter-spacing: 0.1em; margin-top: 4px; font-family: 'Cinzel', serif; }
   .vote-badge.approve { background: rgba(94,232,176,0.12); border: 1px solid rgba(94,232,176,0.4); color: var(--done); box-shadow: 0 0 10px rgba(94,232,176,0.15); }
   .vote-badge.calling { background: rgba(240,192,96,0.08); border: 1px solid rgba(240,192,96,0.3); color: var(--active); }
   .vote-badge.aye     { background: rgba(94,232,176,0.06); border: 1px solid rgba(94,232,176,0.2); color: rgba(94,232,176,0.7); }
@@ -415,11 +437,11 @@ const css = `
 
   .vote-unanimous { margin-top: 8px; padding: 12px 16px; border-radius: 6px; background: rgba(94,232,176,0.07); border: 1px solid rgba(94,232,176,0.4); box-shadow: 0 0 20px rgba(94,232,176,0.12), inset 0 1px 0 rgba(94,232,176,0.1); display: flex; align-items: center; gap: 10px; animation: vote-burst 0.7s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; position: relative; overflow: hidden; }
   .vote-unanimous::after { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(94,232,176,0.06) 50%, transparent 100%); background-size: 200% 100%; animation: unanimous-shimmer 2.5s ease infinite; }
-  .vote-unanimous-mark { font-size: 16px; color: var(--done); }
-  .vote-unanimous-text { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.15em; color: var(--done); }
-  .vote-unanimous-sub  { font-size: 9px; color: rgba(94,232,176,0.5); letter-spacing: 0.05em; margin-top: 2px; }
+  .vote-unanimous-mark { font-size: 18px; color: var(--done); }
+  .vote-unanimous-text { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.15em; color: var(--done); }
+  .vote-unanimous-sub  { font-size: 11px; color: rgba(94,232,176,0.5); letter-spacing: 0.05em; margin-top: 2px; }
 
-  .timing-row { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .timing-row { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); padding: 5px 0; border-bottom: 1px solid var(--border); }
   .timing-row:last-child { border-bottom: none; }
   .timing-val { color: var(--text); }
 
@@ -428,9 +450,9 @@ const css = `
   .stamp-section { margin-bottom: 16px; }
   .stamp-row { display: flex; gap: 8px; padding: 10px; background: rgba(5,7,15,0.55); border: 1px solid var(--border); border-radius: 6px; margin-bottom: 10px; }
   .stamp-box { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 10px 6px 8px; border-radius: 5px; border: 1px solid var(--border); background: rgba(13,18,37,0.9); min-height: 68px; justify-content: center; transition: border-color 0.35s, background 0.35s, box-shadow 0.35s; }
-  .stamp-icon  { font-size: 20px; line-height: 1; opacity: 0.15; transition: opacity 0.3s; }
-  .stamp-label { font-family: 'Cinzel', serif; font-size: 7.5px; letter-spacing: 0.1em; color: var(--muted); transition: color 0.3s; }
-  .stamp-aye   { font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.12em; margin-top: 1px; }
+  .stamp-icon  { font-size: 22px; line-height: 1; opacity: 0.15; transition: opacity 0.3s; }
+  .stamp-label { font-family: 'Cinzel', serif; font-size: 9.5px; letter-spacing: 0.1em; color: var(--muted); transition: color 0.3s; }
+  .stamp-aye   { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.12em; margin-top: 1px; }
   .stamp-voted { animation: stamp-down 0.45s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; }
   .stamp-voted .stamp-icon { opacity: 1; }
   .stamp-voted-zeus     { border-color: rgba(232,184,75,0.5);  background: rgba(232,184,75,0.07);  box-shadow: 0 0 14px rgba(232,184,75,0.1),  inset 0 1px 0 rgba(232,184,75,0.08); }
@@ -444,9 +466,9 @@ const css = `
   .output-text-block { width: 680px; background: linear-gradient(160deg, rgba(6,11,26,0.99) 0%, rgba(4,7,16,0.99) 100%); border: 1px solid rgba(94,232,176,0.4); border-radius: 8px; padding: 22px 26px 26px; box-shadow: 0 2px 4px rgba(0,0,0,0.8), 0 12px 32px rgba(0,0,0,0.5), 0 0 48px rgba(94,232,176,0.06), inset 0 1px 0 rgba(94,232,176,0.1); animation: vote-burst 0.6s cubic-bezier(0.175, 0.885, 0.32, 1.275) both; position: relative; overflow: hidden; }
   .output-text-block::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent 0%, rgba(94,232,176,0.4) 25%, rgba(94,232,176,0.85) 50%, rgba(94,232,176,0.4) 75%, transparent 100%); border-radius: 8px 8px 0 0; box-shadow: 0 0 14px rgba(94,232,176,0.4); }
   .output-text-block::after  { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 0%, rgba(94,232,176,0.025) 50%, transparent 100%); background-size: 200% 100%; animation: unanimous-shimmer 4s ease infinite; pointer-events: none; }
-  .output-text-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid rgba(94,232,176,0.14); font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.22em; color: var(--done); text-transform: uppercase; }
-  .output-timing { margin-left: auto; font-size: 9px; color: rgba(94,232,176,0.5); letter-spacing: 0.08em; font-family: 'JetBrains Mono', monospace; }
-  .output-text-body { font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.85; color: #d8e4f0; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow-y: auto; }
+  .output-text-header { display: flex; align-items: center; gap: 10px; margin-bottom: 16px; padding-bottom: 14px; border-bottom: 1px solid rgba(94,232,176,0.14); font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.22em; color: var(--done); text-transform: uppercase; }
+  .output-timing { margin-left: auto; font-size: 11px; color: rgba(94,232,176,0.5); letter-spacing: 0.08em; font-family: 'JetBrains Mono', monospace; }
+  .output-text-body { font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.85; color: #d8e4f0; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow-y: auto; }
 
   /* ── Tier 1 — Intimate ──────────────────────────────────────────────── */
   .tier1-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 40px; gap: 0; }
@@ -457,13 +479,13 @@ const css = `
   @keyframes symbol-pulse-gaia     { 0%, 100% { filter: drop-shadow(0 0 24px rgba(120,216,122,0.5)); } 50% { filter: drop-shadow(0 0 48px rgba(120,216,122,0.9)); } }
 
   .tier1-symbol      { font-size: 72px; line-height: 1; margin-bottom: 14px; animation: symbol-pulse-gold 3s ease infinite; }
-  .tier1-agent-label { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.32em; color: var(--gold); opacity: 0.65; margin-bottom: 40px; }
-  .tier1-thinking    { font-size: 9px; color: var(--gold); letter-spacing: 0.2em; font-family: 'Cinzel', serif; animation: blink 1.4s step-end infinite; margin-bottom: 20px; opacity: 0.7; }
+  .tier1-agent-label { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.32em; color: var(--gold); opacity: 0.65; margin-bottom: 40px; }
+  .tier1-thinking    { font-size: 11px; color: var(--gold); letter-spacing: 0.2em; font-family: 'Cinzel', serif; animation: blink 1.4s step-end infinite; margin-bottom: 20px; opacity: 0.7; }
   .tier1-response {
     max-width: 680px; width: 100%;
     background: rgba(8,11,22,0.92); border: 1px solid rgba(232,184,75,0.18);
     border-radius: 8px; padding: 24px 28px;
-    font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.85; color: #d8e4f0;
+    font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.85; color: #d8e4f0;
     max-height: calc(100vh - 360px); overflow-y: auto;
     white-space: pre-wrap; word-break: break-word;
     box-shadow: 0 0 40px rgba(232,184,75,0.04), 0 12px 32px rgba(0,0,0,0.5);
@@ -475,7 +497,7 @@ const css = `
   /* ── Tier 2 — Focused trio ──────────────────────────────────────────── */
   .tier2-area { flex: 1; overflow: auto; display: flex; flex-direction: column; align-items: center; padding: 32px 24px; }
 
-  .tier2-request-pill { max-width: 720px; width: 100%; padding: 10px 20px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; font-size: 10px; color: var(--text); font-family: 'JetBrains Mono', monospace; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 10px; }
+  .tier2-request-pill { max-width: 720px; width: 100%; padding: 10px 20px; background: var(--bg3); border: 1px solid var(--border2); border-radius: 4px; font-size: 12px; color: var(--text); font-family: 'JetBrains Mono', monospace; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 10px; }
 
   .tier2-status { font-family: 'Cinzel', serif; font-size: 8.5px; letter-spacing: 0.22em; color: var(--muted); text-transform: uppercase; margin-bottom: 28px; display: flex; align-items: center; gap: 8px; }
   .tier2-status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--gold); box-shadow: 0 0 6px var(--gold); animation: pulse-dot 1s ease infinite; }
@@ -507,32 +529,32 @@ const css = `
   .tier2-card.failed   { border-color: rgba(255,80,80,0.5); opacity: 1; background: linear-gradient(160deg, rgba(28,8,8,0.97) 0%, rgba(14,4,4,0.98) 100%); }
   .tier2-card.failed::before { background: #ff5050; box-shadow: 0 0 8px rgba(255,80,80,0.5); }
 
-  .tier2-status-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 8px; letter-spacing: 0.14em; font-family: 'Cinzel', serif; padding: 2px 7px; border-radius: 3px; }
+  .tier2-status-badge { display: inline-flex; align-items: center; gap: 5px; font-size: 10px; letter-spacing: 0.14em; font-family: 'Cinzel', serif; padding: 2px 7px; border-radius: 3px; }
   .tier2-status-badge.assigned { color: var(--muted); border: 1px solid var(--border); }
   .tier2-status-badge.working  { color: var(--active); border: 1px solid rgba(232,184,75,0.4); animation: blink 1s step-end infinite; }
   .tier2-status-badge.complete { color: var(--done); border: 1px solid rgba(94,232,176,0.3); }
   .tier2-status-badge.failed   { color: #ff5050; border: 1px solid rgba(255,80,80,0.4); }
-  .tier2-timer { font-family: 'JetBrains Mono', monospace; font-size: 9px; color: var(--active); margin-left: auto; }
-  .tier2-error-msg { font-size: 9px; color: #ff7070; font-family: 'JetBrains Mono', monospace; line-height: 1.5; margin-top: 6px; background: rgba(255,80,80,0.07); padding: 6px 8px; border-radius: 4px; border-left: 2px solid rgba(255,80,80,0.5); }
+  .tier2-timer { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--active); margin-left: auto; }
+  .tier2-error-msg { font-size: 11px; color: #ff7070; font-family: 'JetBrains Mono', monospace; line-height: 1.5; margin-top: 6px; background: rgba(255,80,80,0.07); padding: 6px 8px; border-radius: 4px; border-left: 2px solid rgba(255,80,80,0.5); }
 
   .zeus-diagnostic { max-width: 720px; width: 100%; background: linear-gradient(160deg, rgba(18,14,4,0.99) 0%, rgba(10,8,2,0.99) 100%); border: 1px solid rgba(232,184,75,0.4); border-radius: 8px; padding: 18px 22px; box-shadow: 0 0 32px rgba(232,184,75,0.06), 0 8px 24px rgba(0,0,0,0.5), inset 0 1px 0 rgba(232,184,75,0.08); position: relative; overflow: hidden; }
   .zeus-diagnostic::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(232,184,75,0.6), transparent); }
-  .zeus-diagnostic-header { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.22em; color: var(--gold); text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
-  .zeus-diagnostic-meta { font-size: 8px; color: rgba(232,184,75,0.5); font-family: 'JetBrains Mono', monospace; margin-bottom: 8px; }
+  .zeus-diagnostic-header { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.22em; color: var(--gold); text-transform: uppercase; margin-bottom: 12px; display: flex; align-items: center; gap: 8px; }
+  .zeus-diagnostic-meta { font-size: 10px; color: rgba(232,184,75,0.5); font-family: 'JetBrains Mono', monospace; margin-bottom: 8px; }
   .zeus-diagnostic-body { font-size: 10.5px; line-height: 1.75; color: rgba(232,184,75,0.85); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-word; }
 
-  .phase-timer-badge { font-family: 'JetBrains Mono', monospace; font-size: 8px; color: rgba(232,184,75,0.6); margin-left: auto; padding: 1px 6px; border: 1px solid rgba(232,184,75,0.2); border-radius: 3px; }
-  .council-speaker-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 8px; letter-spacing: 0.1em; color: var(--active); font-family: 'Cinzel', serif; animation: blink 1.2s step-end infinite; }
+  .phase-timer-badge { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: rgba(232,184,75,0.6); margin-left: auto; padding: 1px 6px; border: 1px solid rgba(232,184,75,0.2); border-radius: 3px; }
+  .council-speaker-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 10px; letter-spacing: 0.1em; color: var(--active); font-family: 'Cinzel', serif; animation: blink 1.2s step-end infinite; }
   .agent-node.failed { border-color: rgba(255,80,80,0.5); opacity: 1; background: linear-gradient(160deg, rgba(28,8,8,0.97) 0%, rgba(14,4,4,0.98) 100%); }
   .agent-node.failed::before { background: #ff5050; box-shadow: 0 0 8px rgba(255,80,80,0.5); }
 
   .tier2-card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .tier2-card-symbol { font-size: 22px; }
-  .tier2-card-name   { font-family: 'Cinzel', serif; font-size: 11px; font-weight: 600; letter-spacing: 0.12em; flex: 1; }
-  .tier2-card-status { font-size: 10px; color: var(--muted); }
+  .tier2-card-name   { font-family: 'Cinzel', serif; font-size: 13px; font-weight: 600; letter-spacing: 0.12em; flex: 1; }
+  .tier2-card-status { font-size: 12px; color: var(--muted); }
   .tier2-card-status.thinking { color: var(--active); animation: blink 1s step-end infinite; }
   .tier2-card-status.done     { color: var(--done); }
-  .tier2-card-domain  { font-size: 9px; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 10px; }
+  .tier2-card-domain  { font-size: 11px; color: var(--muted); letter-spacing: 0.04em; margin-bottom: 10px; }
   .tier2-card-content { font-size: 9.5px; line-height: 1.65; color: var(--text); max-height: 130px; overflow: hidden; mask-image: linear-gradient(180deg, rgba(0,0,0,1) 55%, rgba(0,0,0,0) 100%); }
 
   .tier2-synthesis {
@@ -545,8 +567,8 @@ const css = `
     position: relative; overflow: hidden;
   }
   .tier2-synthesis::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, rgba(94,232,176,0.5), transparent); border-radius: 8px 8px 0 0; }
-  .tier2-synth-header { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.22em; color: var(--done); text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
-  .tier2-synth-body   { font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.85; color: #d8e4f0; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow-y: auto; }
+  .tier2-synth-header { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.22em; color: var(--done); text-transform: uppercase; margin-bottom: 14px; display: flex; align-items: center; gap: 8px; }
+  .tier2-synth-body   { font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.85; color: #d8e4f0; white-space: pre-wrap; word-break: break-word; max-height: 45vh; overflow-y: auto; }
 
   /* ── Direct modes (zeus_protocol, poseidon, hades, gaia) ────────────── */
   .direct-area { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 48px 40px; gap: 0; }
@@ -557,21 +579,21 @@ const css = `
   .mode-hades         .direct-symbol { animation: symbol-pulse-hades 3s ease infinite; }
   .mode-gaia          .direct-symbol { animation: symbol-pulse-gaia 3s ease infinite; }
 
-  .direct-agent-label { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.35em; margin-bottom: 6px; }
+  .direct-agent-label { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.35em; margin-bottom: 6px; }
   .mode-zeus_protocol .direct-agent-label { color: var(--gold); }
   .mode-poseidon      .direct-agent-label { color: var(--poseidon); }
   .mode-hades         .direct-agent-label { color: var(--hades); }
   .mode-gaia          .direct-agent-label { color: var(--gaia); }
 
-  .direct-channel-label { font-size: 8px; letter-spacing: 0.2em; color: var(--muted); font-family: 'Cinzel', serif; text-transform: uppercase; margin-bottom: 42px; opacity: 0.45; }
+  .direct-channel-label { font-size: 10px; letter-spacing: 0.2em; color: var(--muted); font-family: 'Cinzel', serif; text-transform: uppercase; margin-bottom: 42px; opacity: 0.45; }
 
-  .direct-thinking { font-size: 9px; letter-spacing: 0.2em; font-family: 'Cinzel', serif; animation: blink 1.4s step-end infinite; margin-bottom: 24px; opacity: 0.8; }
+  .direct-thinking { font-size: 11px; letter-spacing: 0.2em; font-family: 'Cinzel', serif; animation: blink 1.4s step-end infinite; margin-bottom: 24px; opacity: 0.8; }
   .mode-zeus_protocol .direct-thinking { color: var(--gold); }
   .mode-poseidon      .direct-thinking { color: var(--poseidon); }
   .mode-hades         .direct-thinking { color: var(--hades); }
   .mode-gaia          .direct-thinking { color: var(--gaia); }
 
-  .direct-response { max-width: 700px; width: 100%; border-radius: 8px; padding: 24px 28px; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.85; white-space: pre-wrap; word-break: break-word; animation: mode-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; position: relative; max-height: calc(100vh - 420px); overflow-y: auto; }
+  .direct-response { max-width: 700px; width: 100%; border-radius: 8px; padding: 24px 28px; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.85; white-space: pre-wrap; word-break: break-word; animation: mode-enter 0.5s cubic-bezier(0.16, 1, 0.3, 1) both; position: relative; max-height: calc(100vh - 420px); overflow-y: auto; }
   .direct-response::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; border-radius: 8px 8px 0 0; }
   .mode-zeus_protocol .direct-response { background: rgba(8,8,8,0.95); border: 1px solid rgba(232,184,75,0.25); color: var(--gold2); box-shadow: 0 0 40px rgba(232,184,75,0.05); }
   .mode-zeus_protocol .direct-response::before { background: linear-gradient(90deg, transparent, rgba(232,184,75,0.45), transparent); }
@@ -582,18 +604,29 @@ const css = `
   .mode-gaia     .direct-response { background: rgba(3,9,6,0.96); border: 1px solid rgba(120,216,122,0.25); color: #a8d8aa; box-shadow: 0 0 40px rgba(120,216,122,0.05); }
   .mode-gaia     .direct-response::before { background: linear-gradient(90deg, transparent, rgba(120,216,122,0.45), transparent); }
 
+  .direct-streaming { max-width: 700px; width: 100%; border-radius: 8px; padding: 24px 28px; font-family: 'JetBrains Mono', monospace; font-size: 13.5px; line-height: 1.85; white-space: pre-wrap; word-break: break-word; position: relative; max-height: calc(100vh - 420px); overflow-y: auto; opacity: 0.75; }
+  .mode-zeus_protocol .direct-streaming { background: rgba(8,8,8,0.9); border: 1px solid rgba(232,184,75,0.15); color: rgba(232,184,75,0.7); }
+  .mode-poseidon      .direct-streaming { background: rgba(2,10,20,0.9); border: 1px solid rgba(74,184,232,0.15); color: rgba(74,184,232,0.7); }
+  .mode-hades         .direct-streaming { background: rgba(6,3,14,0.9); border: 1px solid rgba(176,74,220,0.15); color: rgba(176,74,220,0.7); }
+  .mode-gaia          .direct-streaming { background: rgba(3,9,6,0.9); border: 1px solid rgba(120,216,122,0.15); color: rgba(120,216,122,0.7); }
+  .streaming-cursor { display: inline-block; width: 2px; height: 1em; vertical-align: text-bottom; animation: blink 1s step-end infinite; margin-left: 2px; }
+  .mode-zeus_protocol .streaming-cursor { background: var(--gold); }
+  .mode-poseidon      .streaming-cursor { background: var(--poseidon); }
+  .mode-hades         .streaming-cursor { background: var(--hades); }
+  .mode-gaia          .streaming-cursor { background: var(--gaia); }
+
   /* ── Gaia mode view ─────────────────────────────────────────────────── */
   .gaia-area {
     flex: 1; display: flex; flex-direction: column; align-items: center;
     padding: 36px 40px 24px; overflow-y: auto; gap: 0;
   }
   .gaia-symbol { font-size: 64px; line-height: 1; margin-bottom: 12px; animation: symbol-pulse-gaia 3s ease infinite; }
-  .gaia-label  { font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.35em; color: var(--gaia); opacity: 0.8; margin-bottom: 4px; }
-  .gaia-sublabel { font-size: 8px; letter-spacing: 0.2em; color: var(--muted); font-family: 'Cinzel', serif; text-transform: uppercase; opacity: 0.45; margin-bottom: 20px; }
+  .gaia-label  { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.35em; color: var(--gaia); opacity: 0.8; margin-bottom: 4px; }
+  .gaia-sublabel { font-size: 10px; letter-spacing: 0.2em; color: var(--muted); font-family: 'Cinzel', serif; text-transform: uppercase; opacity: 0.45; margin-bottom: 20px; }
   .gaia-tabs { display: flex; gap: 5px; margin-bottom: 24px; }
 
   .gaia-messages { width: 100%; max-width: 720px; display: flex; flex-direction: column; gap: 14px; }
-  .gaia-empty { font-size: 9px; color: var(--dim); font-family: 'Cinzel', serif; letter-spacing: 0.15em; text-align: center; padding: 32px 0; }
+  .gaia-empty { font-size: 11px; color: var(--dim); font-family: 'Cinzel', serif; letter-spacing: 0.15em; text-align: center; padding: 32px 0; }
   .gaia-message-item {
     background: rgba(3,9,6,0.85); border: 1px solid rgba(120,216,122,0.14);
     border-radius: 8px; padding: 16px 20px; position: relative;
@@ -601,10 +634,10 @@ const css = `
   }
   .gaia-message-item::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, rgba(120,216,122,0.3), transparent); border-radius: 8px 8px 0 0; }
   .gaia-msg-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
-  .gaia-msg-user { font-size: 8px; font-family: 'Cinzel', serif; letter-spacing: 0.12em; color: var(--gaia); opacity: 0.7; }
-  .gaia-msg-time { font-size: 8px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
-  .gaia-msg-question { font-size: 10px; color: var(--text); font-family: 'JetBrains Mono', monospace; line-height: 1.6; margin-bottom: 10px; opacity: 0.7; padding-bottom: 10px; border-bottom: 1px solid rgba(120,216,122,0.08); }
-  .gaia-msg-response { font-size: 11px; color: #a8d8aa; font-family: 'JetBrains Mono', monospace; line-height: 1.85; white-space: pre-wrap; word-break: break-word; max-height: calc(100vh - 520px); overflow-y: auto; }
+  .gaia-msg-user { font-size: 10px; font-family: 'Cinzel', serif; letter-spacing: 0.12em; color: var(--gaia); opacity: 0.7; }
+  .gaia-msg-time { font-size: 10px; color: var(--muted); font-family: 'JetBrains Mono', monospace; }
+  .gaia-msg-question { font-size: 12px; color: var(--text); font-family: 'JetBrains Mono', monospace; line-height: 1.6; margin-bottom: 10px; opacity: 0.7; padding-bottom: 10px; border-bottom: 1px solid rgba(120,216,122,0.08); }
+  .gaia-msg-response { font-size: 13px; color: #a8d8aa; font-family: 'JetBrains Mono', monospace; line-height: 1.85; white-space: pre-wrap; word-break: break-word; max-height: calc(100vh - 520px); overflow-y: auto; }
   .gaia-msg-response, .gaia-area { scrollbar-width: thin; scrollbar-color: rgba(42,96,52,0.6) transparent; }
   .gaia-msg-response::-webkit-scrollbar, .gaia-area::-webkit-scrollbar { width: 3px; }
   .gaia-msg-response::-webkit-scrollbar-track, .gaia-area::-webkit-scrollbar-track { background: transparent; }
@@ -614,7 +647,7 @@ const css = `
   .user-context-btn {
     padding: 3px 10px; border-radius: 2px; border: 1px solid var(--border);
     background: transparent; color: var(--muted); font-family: 'Cinzel', serif;
-    font-size: 8px; letter-spacing: 0.12em; cursor: pointer; transition: all 0.2s;
+    font-size: 10px; letter-spacing: 0.12em; cursor: pointer; transition: all 0.2s;
     white-space: nowrap;
   }
   .user-context-btn.user-active  { border-color: var(--gold); color: var(--gold2); background: rgba(200,150,10,0.07); }
@@ -669,7 +702,7 @@ const css = `
   .mode-gaia          .input-bar::before { background: linear-gradient(90deg, transparent, rgba(120,216,122,0.25), transparent); }
 
   .input-inner { max-width: 800px; margin: 0 auto; }
-  .input-textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 11px; line-height: 1.6; padding: 10px 12px; resize: none; height: 68px; outline: none; transition: border-color 0.2s; }
+  .input-textarea { width: 100%; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; color: var(--text); font-family: 'JetBrains Mono', monospace; font-size: 13px; line-height: 1.6; padding: 10px 12px; resize: none; height: 68px; outline: none; transition: border-color 0.2s; }
   .input-textarea::placeholder { color: var(--dim); }
   .input-textarea:focus { border-color: var(--border2); }
   .input-textarea:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -706,6 +739,142 @@ const css = `
   .mode-gaia .send-btn     { border-color: rgba(120,216,122,0.35); color: var(--gaia); background: rgba(120,216,122,0.08); }
   .mode-gaia .send-btn:hover:not(:disabled) { background: rgba(120,216,122,0.16); box-shadow: 0 0 14px rgba(120,216,122,0.15); }
 
+
+
+
+  /* ── Quorum sub-pills ────────────────────────────────────────── */
+  .node-health-expanded {
+    position: absolute; top: 100%; right: 0; margin-top: 4px;
+    background: rgba(9,12,24,0.98); border: 1px solid #1a2040;
+    border-radius: 4px; padding: 12px 14px; z-index: 100;
+    animation: mode-enter 0.2s ease both; min-width: 280px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  }
+  .node-health-group { margin-bottom: 10px; }
+  .node-health-group:last-child { margin-bottom: 0; }
+  .node-health-head { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .quorum-row { display: flex; gap: 4px; margin-left: 18px; flex-wrap: wrap; }
+  .quorum-chip {
+    display: flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 3px;
+    background: rgba(9,12,24,0.6); border: 1px solid rgba(26,32,64,0.6);
+    font-family: 'JetBrains Mono', monospace; font-size: 9px;
+    letter-spacing: 0.08em; color: var(--dim); text-transform: uppercase;
+    opacity: 0.7;
+  }
+  .quorum-chip .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
+  .quorum-chip.online .dot { background: var(--done); box-shadow: 0 0 4px var(--done); }
+  .quorum-chip.offline .dot { background: #ff5050; }
+  /* ── Queue expand prompt ─────────────────────────────────────── */
+  .queue-item-name { font-size: 14px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
+  .queue-expand-btn {
+    display: none; align-items: center; justify-content: center;
+    width: 14px; height: 14px; border-radius: 2px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--dim); font-size: 9px; transition: all 0.15s;
+    flex-shrink: 0; padding: 0;
+  }
+  .queue-item:hover .queue-expand-btn { display: flex; }
+  .queue-expand-btn.open { display: flex; color: var(--gold); transform: rotate(180deg); }
+  .queue-expanded-text {
+    margin-top: 3px; padding: 4px 6px;
+    background: rgba(5,7,15,0.5); border-radius: 2px;
+    border-left: 2px solid rgba(200,150,10,0.1);
+    font-size: 10px; color: var(--dim); line-height: 1.4;
+    max-height: 60px; overflow-y: auto; word-break: break-word;
+  }
+
+  /* ── Smart name + trash + expand ─────────────────────────────── */
+  .req-trash-btn {
+    display: none; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 3px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--dim); font-size: 13px; transition: all 0.15s;
+    flex-shrink: 0; padding: 0;
+  }
+  .req-item:hover .req-trash-btn { display: flex; }
+  .req-trash-btn:hover { background: rgba(255,60,60,0.25); color: #ff6060; box-shadow: 0 0 6px rgba(255,60,60,0.18); }
+  .req-expand-btn {
+    display: none; align-items: center; justify-content: center;
+    width: 18px; height: 18px; border-radius: 3px;
+    background: transparent; border: none; cursor: pointer;
+    color: var(--dim); font-size: 10px; transition: all 0.15s;
+    flex-shrink: 0; padding: 0; margin-left: 2px;
+  }
+  .req-item:hover .req-expand-btn { display: flex; }
+  .req-expand-btn:hover { background: rgba(200,150,10,0.15); color: var(--muted); }
+  .req-expand-btn.open { display: flex; color: var(--gold); transform: rotate(180deg); }
+  .req-expanded-prompt {
+    margin-top: 4px; padding: 6px 8px;
+    background: rgba(5,7,15,0.6); border-radius: 3px;
+    border-left: 2px solid rgba(200,150,10,0.15);
+    font-size: 11px; color: var(--muted); line-height: 1.5;
+    max-height: 80px; overflow-y: auto; word-break: break-word;
+  }
+  .req-expanded-prompt::-webkit-scrollbar { width: 2px; }
+  .req-expanded-prompt::-webkit-scrollbar-thumb { background: rgba(200,150,10,0.15); border-radius: 2px; }
+
+  /* ── Unified input container ─────────────────────────────────── */
+  .input-unified {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg3);
+    overflow: visible;
+    transition: border-color 0.2s;
+  }
+  .input-unified:focus-within { border-color: var(--border2); }
+  .mode-zeus_protocol .input-unified { background: rgba(8,8,8,0.9); border-color: rgba(232,184,75,0.15); }
+  .mode-zeus_protocol .input-unified:focus-within { border-color: rgba(232,184,75,0.35); }
+  .mode-poseidon .input-unified:focus-within { border-color: rgba(74,184,232,0.35); }
+  .mode-hades    .input-unified:focus-within { border-color: rgba(176,74,220,0.35); }
+  .mode-gaia     .input-unified:focus-within { border-color: rgba(120,216,122,0.35); }
+  .input-unified .input-textarea { border: none !important; border-radius: 0; background: transparent !important; }
+  .input-unified .input-controls { margin-top: 0; padding: 6px 10px; border-top: 1px solid var(--border); background: rgba(5,7,15,0.4); }
+  .route-selector { position: relative; }
+  .route-current {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 11px; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 3px; color: var(--gold2); font-family: 'Cinzel', serif;
+    font-size: 8.5px; letter-spacing: 0.08em; cursor: pointer; transition: all 0.25s;
+    white-space: nowrap;
+  }
+  .route-current:hover { border-color: var(--border2); }
+  .route-current .route-chevron { font-size: 9px; opacity: 0.6; transition: transform 0.2s; }
+  .route-current .route-chevron.open { transform: rotate(180deg); }
+  .route-dropdown {
+    position: absolute; bottom: calc(100% + 4px); left: 0;
+    background: rgba(9,12,24,0.98); border: 1px solid var(--border);
+    border-radius: 4px; padding: 4px 0; z-index: 100; min-width: 160px;
+    animation: mode-enter 0.15s ease both;
+    box-shadow: 0 -4px 16px rgba(0,0,0,0.4);
+  }
+  .route-option {
+    display: block; width: 100%; padding: 6px 12px; background: none; border: none;
+    color: var(--muted); font-family: 'Cinzel', serif; font-size: 8.5px;
+    letter-spacing: 0.08em; cursor: pointer; text-align: left; transition: all 0.15s;
+  }
+  .route-option:hover { background: rgba(200,150,10,0.08); color: var(--text); }
+  .route-option.active { color: var(--gold2); background: rgba(200,150,10,0.06); }
+  .send-arrow {
+    width: 30px; height: 30px; display: flex; align-items: center; justify-content: center;
+    background: rgba(200,150,10,0.1); border: 1px solid rgba(200,150,10,0.35);
+    border-radius: 50%; color: var(--gold2); font-size: 16px; cursor: pointer;
+    transition: all 0.25s; flex-shrink: 0; line-height: 1;
+  }
+  .send-arrow:hover:not(:disabled) { background: rgba(200,150,10,0.18); box-shadow: 0 0 14px rgba(200,150,10,0.2); }
+  .send-arrow:disabled { opacity: 0.35; cursor: not-allowed; }
+  .send-arrow.sending { animation: pulse-dot 1s ease infinite; }
+  .mode-poseidon .send-arrow { border-color: rgba(74,184,232,0.35); color: var(--poseidon); background: rgba(74,184,232,0.08); }
+  .mode-poseidon .send-arrow:hover:not(:disabled) { background: rgba(74,184,232,0.16); box-shadow: 0 0 14px rgba(74,184,232,0.15); }
+  .mode-hades .send-arrow { border-color: rgba(176,74,220,0.35); color: var(--hades); background: rgba(176,74,220,0.08); }
+  .mode-hades .send-arrow:hover:not(:disabled) { background: rgba(176,74,220,0.16); box-shadow: 0 0 14px rgba(176,74,220,0.15); }
+  .mode-gaia .send-arrow { border-color: rgba(120,216,122,0.35); color: var(--gaia); background: rgba(120,216,122,0.08); }
+  .mode-gaia .send-arrow:hover:not(:disabled) { background: rgba(120,216,122,0.16); box-shadow: 0 0 14px rgba(120,216,122,0.15); }
+  .gaia-input-bar .send-arrow { background: rgba(8,25,10,0.88) !important; border-color: rgba(120,216,122,0.45) !important; color: var(--gaia) !important; }
+  .gaia-input-bar .send-arrow:hover:not(:disabled) { background: rgba(12,38,15,0.92) !important; box-shadow: 0 0 18px rgba(120,216,122,0.28) !important; }
+  .gaia-input-bar .input-unified { border-color: rgba(120,216,122,0.18); }
+  .gaia-input-bar .input-unified:focus-within { border-color: rgba(120,216,122,0.45); box-shadow: 0 0 14px rgba(120,216,122,0.07); }
+
   /* ── Gaia input bar ──────────────────────────────────────────────── */
   .gaia-input-bar { border-top-color: rgba(120,216,122,0.2) !important; }
   .gaia-input-bar::before { background: linear-gradient(90deg, transparent, rgba(120,216,122,0.3), transparent) !important; }
@@ -719,7 +888,7 @@ const css = `
     display: flex; align-items: center; justify-content: center;
     width: 42px; height: 42px; border-radius: 6px;
     background: rgba(9,12,24,0.8); border: 1px solid rgba(120,216,122,0.25);
-    cursor: pointer; font-size: 20px; transition: all 0.3s;
+    cursor: pointer; font-size: 22px; transition: all 0.3s;
     box-shadow: 0 2px 8px rgba(0,0,0,0.3), 0 0 0 0 rgba(120,216,122,0);
     animation: gaia-idle-pulse 4s ease-in-out infinite;
     position: relative; flex-shrink: 0;
@@ -755,7 +924,7 @@ const css = `
   }
   .top-toggle-btn {
     font-family: "JetBrains Mono", monospace;
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.18em;
     text-transform: uppercase;
     padding: 4px 12px;
@@ -773,7 +942,7 @@ const css = `
   }
   .node-health-btn {
     font-family: "JetBrains Mono", monospace;
-    font-size: 9px;
+    font-size: 11px;
     letter-spacing: 0.15em;
     text-transform: uppercase;
     padding: 4px 10px;
@@ -821,7 +990,7 @@ const css = `
   }
   .gaia-toggle-btn {
     background: transparent; border: none; cursor: pointer;
-    font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.15em;
+    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.15em;
     color: rgba(120,216,122,0.45); padding: 5px 16px; border-radius: 16px;
     transition: all 0.25s ease;
   }
@@ -831,6 +1000,90 @@ const css = `
     color: #78d87a;
     box-shadow: 0 0 12px rgba(120,216,122,0.2), inset 0 0 8px rgba(120,216,122,0.06);
     text-shadow: 0 0 10px rgba(120,216,122,0.5);
+  }
+
+
+  /* ── Cinematic Takeover (T2/T3) ──────────────────────────────────── */
+  @keyframes takeover-fade { from { opacity: 0; } to { opacity: 1; } }
+
+  .cinematic-takeover {
+    position: fixed; inset: 0; z-index: 1000;
+    background: #05070f;
+    display: grid; grid-template-columns: 1fr 1fr;
+    animation: takeover-fade 0.3s ease both;
+  }
+  .cinematic-exit {
+    position: absolute; top: 16px; right: 20px; z-index: 1001;
+    background: none; border: 1px solid rgba(255,255,255,0.12); color: var(--muted);
+    font-size: 11px; padding: 4px 10px; border-radius: 3px; cursor: pointer;
+    font-family: "Cinzel", serif; letter-spacing: 0.1em;
+    transition: border-color 0.2s, color 0.2s;
+  }
+  .cinematic-exit:hover { border-color: var(--gold); color: var(--gold); }
+
+  .cinematic-left {
+    height: 100vh; display: flex; flex-direction: column;
+    padding: 20px 24px 0; overflow: hidden;
+    border-right: 1px solid rgba(232,184,75,0.12);
+  }
+  .cinematic-right {
+    height: 100vh; display: flex; flex-direction: column;
+    padding: 20px 24px; overflow: hidden;
+  }
+
+  .cinematic-tier-badge {
+    font-family: "Cinzel", serif; font-size: 10px; letter-spacing: 0.2em;
+    color: var(--gold); margin-bottom: 8px; display: flex; align-items: center; gap: 10px;
+    flex-shrink: 0;
+  }
+  .cinematic-tier-badge .tier-label {
+    padding: 3px 10px; border: 1px solid rgba(232,184,75,0.3);
+    border-radius: 3px; background: rgba(232,184,75,0.06);
+  }
+  .cinematic-mission-text {
+    font-size: 12px; color: var(--text); font-family: "JetBrains Mono", monospace;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 80%;
+  }
+
+  /* Wrap the existing mode view and make it fill the left panel */
+  .cinematic-flow-wrap {
+    flex: 1; min-height: 0; display: flex; overflow: hidden;
+  }
+  /* Constrain existing flow-area / tier2-area to fit in takeover */
+  .cinematic-flow-wrap .flow-area,
+  .cinematic-flow-wrap .tier2-area {
+    flex: 1; overflow-y: auto; overflow-x: hidden;
+  }
+  /* Scale the flow diagram to fit viewport */
+  .cinematic-flow-wrap .flow-container {
+    transform-origin: top center;
+    transform: scale(0.78);
+    width: 100% !important;
+  }
+  .cinematic-flow-wrap .flow-svg {
+    height: 670px !important;
+  }
+  /* Compact tier2 cards slightly */
+  .cinematic-flow-wrap .tier2-area { padding: 16px 12px; }
+  .cinematic-flow-wrap .tier2-card { padding: 10px 12px; }
+  .cinematic-flow-wrap .tier2-agents { gap: 10px; }
+
+  /* Right panel */
+  .cinematic-right-header {
+    font-family: "Cinzel", serif; font-size: 11px; letter-spacing: 0.15em;
+    color: var(--gold); margin-bottom: 12px; flex-shrink: 0;
+  }
+  .cinematic-council-section {
+    flex: 1; min-height: 0; overflow-y: auto;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .cinematic-council-section::-webkit-scrollbar { width: 3px; }
+  .cinematic-council-section::-webkit-scrollbar-thumb { background: rgba(232,184,75,0.15); border-radius: 2px; }
+
+  .cinematic-phase-label {
+    font-family: "Cinzel", serif; font-size: 9px; letter-spacing: 0.15em;
+    color: var(--muted); margin-top: 8px; margin-bottom: 4px; flex-shrink: 0;
   }
 
   /* ── Gaia chat view ────────────────────────────────────────────────── */
@@ -858,7 +1111,7 @@ const css = `
     border-bottom: 1px solid rgba(120,216,122,0.08);
   }
   .gaia-council-msg {
-    max-width: 78%; padding: 10px 14px; border-radius: 8px; font-size: 12px;
+    max-width: 78%; padding: 10px 14px; border-radius: 8px; font-size: 14px;
     line-height: 1.55;
   }
   .gaia-council-msg.gaia-left {
@@ -870,7 +1123,7 @@ const css = `
     background: rgba(232,184,75,0.07); border: 1px solid rgba(232,184,75,0.18);
   }
   .gaia-council-speaker {
-    font-size: 9px; font-family: 'Cinzel', serif; letter-spacing: 0.15em;
+    font-size: 11px; font-family: 'Cinzel', serif; letter-spacing: 0.15em;
     margin-bottom: 6px; font-weight: 600;
   }
   .gaia-council-speaker.gaia     { color: var(--gaia); }
@@ -882,7 +1135,7 @@ const css = `
   }
   .gaia-council-msg.council-right .gaia-council-text { color: rgba(255,240,185,0.88); }
   .gaia-council-meta {
-    font-size: 9px; color: var(--dim); margin-top: 6px;
+    font-size: 11px; color: var(--dim); margin-top: 6px;
     font-family: 'JetBrains Mono', monospace; opacity: 0.6;
   }
 
@@ -895,15 +1148,15 @@ const css = `
   .gaia-ssh-entry.ok     { border-left-color: rgba(120,216,122,0.5); background: rgba(120,216,122,0.04); }
   .gaia-ssh-entry.failed { border-left-color: rgba(220,80,80,0.5);   background: rgba(220,80,80,0.04); }
   .gaia-ssh-header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
-  .gaia-ssh-status { font-size: 11px; font-weight: 700; }
+  .gaia-ssh-status { font-size: 13px; font-weight: 700; }
   .gaia-ssh-status.ok     { color: var(--gaia); }
   .gaia-ssh-status.failed { color: #dc5050; }
-  .gaia-ssh-node { font-size: 9px; font-family: 'Cinzel', serif; letter-spacing: 0.12em; color: var(--gold); }
-  .gaia-ssh-time { font-size: 9px; color: var(--dim); margin-left: auto; font-family: 'JetBrains Mono', monospace; }
-  .gaia-ssh-command { font-size: 10px; font-family: 'JetBrains Mono', monospace; color: rgba(200,230,200,0.85); margin-bottom: 4px; }
+  .gaia-ssh-node { font-size: 11px; font-family: 'Cinzel', serif; letter-spacing: 0.12em; color: var(--gold); }
+  .gaia-ssh-time { font-size: 11px; color: var(--dim); margin-left: auto; font-family: 'JetBrains Mono', monospace; }
+  .gaia-ssh-command { font-size: 12px; font-family: 'JetBrains Mono', monospace; color: rgba(200,230,200,0.85); margin-bottom: 4px; }
   .gaia-ssh-command code { background: rgba(0,0,0,0.3); padding: 2px 6px; border-radius: 3px; }
-  .gaia-ssh-reason { font-size: 10px; color: var(--muted); margin-bottom: 4px; font-style: italic; }
-  .gaia-ssh-result { font-size: 10px; color: var(--dim); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-all; }
+  .gaia-ssh-reason { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-style: italic; }
+  .gaia-ssh-result { font-size: 12px; color: var(--dim); font-family: 'JetBrains Mono', monospace; white-space: pre-wrap; word-break: break-all; }
   .gaia-chat-messages {
     flex: 1; overflow-y: auto; padding: 16px 24px 24px;
     display: flex; flex-direction: column; gap: 24px;
@@ -911,32 +1164,32 @@ const css = `
   }
   .gaia-chat-empty {
     flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
-    color: rgba(120,216,122,0.35); font-family: 'Cinzel', serif; font-size: 12px;
+    color: rgba(120,216,122,0.35); font-family: 'Cinzel', serif; font-size: 14px;
     letter-spacing: 0.12em; text-align: center; gap: 4px;
   }
   .gaia-chat-entry { display: flex; flex-direction: column; gap: 6px; }
   .gaia-chat-user-label {
-    font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.2em;
+    font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.2em;
     color: rgba(232,184,75,0.5); text-align: right; padding-right: 2px;
   }
   .gaia-chat-user-msg {
     background: rgba(232,184,75,0.07); border: 1px solid rgba(232,184,75,0.14);
     border-radius: 12px 12px 2px 12px; padding: 10px 14px; align-self: flex-end;
-    max-width: 80%; font-size: 13px; color: rgba(255,255,255,0.82); line-height: 1.55;
+    max-width: 80%; font-size: 15px; color: rgba(255,255,255,0.82); line-height: 1.55;
   }
   .gaia-chat-gaia-label {
-    font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.2em;
+    font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.2em;
     color: rgba(120,216,122,0.55); padding-left: 2px;
   }
   .gaia-chat-gaia-msg {
     background: rgba(120,216,122,0.06); border: 1px solid rgba(120,216,122,0.14);
     border-radius: 2px 12px 12px 12px; padding: 10px 14px; align-self: flex-start;
-    max-width: 86%; font-size: 13px; color: rgba(200,240,200,0.88); line-height: 1.65;
+    max-width: 86%; font-size: 15px; color: rgba(200,240,200,0.88); line-height: 1.65;
     box-shadow: 0 0 20px rgba(120,216,122,0.06);
   }
   .gaia-chat-thinking {
     display: flex; align-items: center; padding: 10px 14px;
-    font-size: 12px; color: rgba(120,216,122,0.5); font-style: italic;
+    font-size: 14px; color: rgba(120,216,122,0.5); font-style: italic;
   }
   .gaia-thinking-dot {
     display: inline-block; width: 5px; height: 5px; border-radius: 50%;
@@ -962,12 +1215,12 @@ const css = `
   }
   .gaia-sidebar-section { padding: 14px 14px; border-bottom: 1px solid rgba(120,216,122,0.07); }
   .gaia-sidebar-label {
-    font-size: 9px; letter-spacing: 0.22em; color: rgba(120,216,122,0.52);
+    font-size: 11px; letter-spacing: 0.22em; color: rgba(120,216,122,0.52);
     text-transform: uppercase; margin-bottom: 10px; font-family: 'Cinzel', serif;
   }
   .gaia-sidebar-tabs { display: flex; gap: 4px; margin-bottom: 10px; }
   .gaia-sidebar-tab {
-    flex: 1; padding: 4px 0; font-size: 8px; font-family: 'Cinzel', serif;
+    flex: 1; padding: 4px 0; font-size: 10px; font-family: 'Cinzel', serif;
     letter-spacing: 0.12em; border: 1px solid rgba(120,216,122,0.14); background: transparent;
     color: rgba(120,216,122,0.38); cursor: pointer; border-radius: 2px; text-align: center;
     transition: border-color 0.15s, color 0.15s, background 0.15s;
@@ -981,9 +1234,9 @@ const css = `
   }
   .gaia-conv-item:hover { border-color: rgba(120,216,122,0.28); background: rgba(8,22,9,0.85); }
   .gaia-conv-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 5px; }
-  .gaia-conv-badge { font-size: 10px; line-height: 1; filter: drop-shadow(0 0 4px rgba(120,216,122,0.5)); }
-  .gaia-conv-user { font-size: 7.5px; font-family: 'Cinzel', serif; letter-spacing: 0.10em; color: var(--gaia); opacity: 0.75; }
-  .gaia-conv-time { font-size: 8px; color: rgba(120,216,122,0.32); }
+  .gaia-conv-badge { font-size: 12px; line-height: 1; filter: drop-shadow(0 0 4px rgba(120,216,122,0.5)); }
+  .gaia-conv-user { font-size: 9.5px; font-family: 'Cinzel', serif; letter-spacing: 0.10em; color: var(--gaia); opacity: 0.75; }
+  .gaia-conv-time { font-size: 10px; color: rgba(120,216,122,0.32); }
   .gaia-conv-text {
     font-size: 9.5px; color: rgba(175,210,175,0.82); line-height: 1.45;
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-bottom: 3px;
@@ -992,7 +1245,7 @@ const css = `
     font-size: 8.5px; color: rgba(100,148,100,0.62); line-height: 1.42;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .gaia-conv-empty { font-size: 9px; color: rgba(120,216,122,0.24); line-height: 1.75; font-style: italic; padding: 6px 0; }
+  .gaia-conv-empty { font-size: 11px; color: rgba(120,216,122,0.24); line-height: 1.75; font-style: italic; padding: 6px 0; }
   .gaia-right-panel {
     width: 360px; flex-shrink: 0;
     background: rgba(3,9,4,0.95); border-left: 1px solid rgba(120,216,122,0.15);
@@ -1003,8 +1256,8 @@ const css = `
     padding: 14px 16px 10px; border-bottom: 1px solid rgba(120,216,122,0.10);
     display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
   }
-  .gaia-panel-title { font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.22em; color: var(--gaia); }
-  .gaia-panel-subtitle { font-size: 8px; color: var(--muted); letter-spacing: 0.12em; margin-top: 3px; }
+  .gaia-panel-title { font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.22em; color: var(--gaia); }
+  .gaia-panel-subtitle { font-size: 10px; color: var(--muted); letter-spacing: 0.12em; margin-top: 3px; }
   .gaia-channel-tabs { display: flex; border-bottom: 1px solid rgba(120,216,122,0.08); flex-shrink: 0; }
   .gaia-panel-body { flex: 1; overflow-y: auto; padding: 12px 14px; }
   .olympus-msg { padding: 7px 0; border-bottom: 1px solid rgba(120,216,122,0.05); }
@@ -1023,7 +1276,7 @@ const css = `
     flex-shrink: 0;
   }
   .gaia-feed-tab {
-    flex: 1; padding: 6px 0; font-size: 7.5px; font-family: 'Cinzel', serif;
+    flex: 1; padding: 6px 0; font-size: 9.5px; font-family: 'Cinzel', serif;
     letter-spacing: 0.14em; border: none; border-bottom: 2px solid transparent;
     background: transparent; color: var(--muted); cursor: pointer; text-align: center;
     transition: color 0.15s, border-color 0.15s;
@@ -1031,22 +1284,22 @@ const css = `
   .gaia-feed-tab:hover { color: var(--gaia); }
   .gaia-feed-tab.active { color: var(--gaia); border-bottom-color: var(--gaia); }
   .gaia-feed-body { flex: 1; overflow-y: auto; padding: 10px 14px; }
-  .gaia-feed-empty { font-size: 9px; color: var(--dim); text-align: center; padding: 20px 0; font-family: 'Cinzel', serif; letter-spacing: 0.1em; }
+  .gaia-feed-empty { font-size: 11px; color: var(--dim); text-align: center; padding: 20px 0; font-family: 'Cinzel', serif; letter-spacing: 0.1em; }
   .gaia-feed-msg {
     padding: 8px 0; border-bottom: 1px solid rgba(120,216,122,0.06);
     display: flex; gap: 8px; align-items: flex-start;
   }
   .gaia-feed-msg:last-child { border-bottom: none; }
   .gaia-feed-speaker {
-    font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.1em;
+    font-family: 'Cinzel', serif; font-size: 10px; letter-spacing: 0.1em;
     min-width: 64px; padding-top: 1px; flex-shrink: 0;
   }
   .gaia-feed-speaker.gaia     { color: var(--gaia); }
   .gaia-feed-speaker.zeus     { color: var(--zeus); }
   .gaia-feed-speaker.poseidon { color: var(--poseidon); }
   .gaia-feed-speaker.hades    { color: var(--hades); }
-  .gaia-feed-text { font-size: 9px; color: var(--text); line-height: 1.6; }
-  .gaia-feed-meta { font-size: 8px; color: var(--dim); margin-top: 3px; }
+  .gaia-feed-text { font-size: 11px; color: var(--text); line-height: 1.6; }
+  .gaia-feed-meta { font-size: 10px; color: var(--dim); margin-top: 3px; }
 
   /* ── Fruit detail panel ───────────────────────────────────────────── */
   .fruit-panel {
@@ -1061,19 +1314,19 @@ const css = `
   }
   .fruit-panel-symbol { font-size: 26px; filter: drop-shadow(0 0 12px currentColor); }
   .fruit-panel-name {
-    font-family: 'Cinzel', serif; font-size: 12px; letter-spacing: 0.2em;
+    font-family: 'Cinzel', serif; font-size: 14px; letter-spacing: 0.2em;
     margin-top: 2px;
   }
-  .fruit-panel-domain { font-size: 8px; color: var(--muted); letter-spacing: 0.12em; margin-top: 3px; font-family: 'Cinzel', serif; }
+  .fruit-panel-domain { font-size: 10px; color: var(--muted); letter-spacing: 0.12em; margin-top: 3px; font-family: 'Cinzel', serif; }
   .fruit-panel-close {
     background: none; border: none; color: var(--muted); cursor: pointer;
-    font-size: 14px; padding: 4px; transition: color 0.2s;
+    font-size: 16px; padding: 4px; transition: color 0.2s;
   }
   .fruit-panel-close:hover { color: var(--gaia); }
   .fruit-panel-body { flex: 1; overflow-y: auto; padding: 14px 18px; }
   .fruit-panel-section { margin-bottom: 18px; }
   .fruit-panel-label {
-    font-size: 8px; letter-spacing: 0.2em; color: var(--muted);
+    font-size: 10px; letter-spacing: 0.2em; color: var(--muted);
     font-family: 'Cinzel', serif; text-transform: uppercase; margin-bottom: 8px;
   }
   .fruit-ripeness-bar {
@@ -1083,18 +1336,18 @@ const css = `
   .fruit-ripeness-fill {
     height: 100%; border-radius: 3px; transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
   }
-  .fruit-ripeness-label { font-size: 9px; font-family: 'Cinzel', serif; letter-spacing: 0.12em; }
+  .fruit-ripeness-label { font-size: 11px; font-family: 'Cinzel', serif; letter-spacing: 0.12em; }
   .fruit-directive-item {
-    padding: 8px 0; border-bottom: 1px solid rgba(120,216,122,0.06); font-size: 9px;
+    padding: 8px 0; border-bottom: 1px solid rgba(120,216,122,0.06); font-size: 11px;
     line-height: 1.6; color: var(--text);
   }
   .fruit-directive-item:last-child { border-bottom: none; }
-  .fruit-directive-ts { font-size: 8px; color: var(--dim); margin-bottom: 3px; }
+  .fruit-directive-ts { font-size: 10px; color: var(--dim); margin-bottom: 3px; }
 
   /* ── Queue UI ─────────────────────────────────────────────────────── */
   .queue-pos-badge {
     display: inline-flex; align-items: center; justify-content: center;
-    font-family: 'Cinzel', serif; font-size: 7px; letter-spacing: 0.06em;
+    font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.06em;
     color: var(--active); border: 1px solid rgba(240,192,96,0.4);
     background: rgba(240,192,96,0.07); border-radius: 3px; padding: 0 5px; min-width: 20px;
   }
@@ -1102,7 +1355,7 @@ const css = `
     display: none; align-items: center; justify-content: center;
     width: 16px; height: 16px; border-radius: 2px; flex-shrink: 0;
     background: rgba(255,60,60,0.1); border: 1px solid rgba(255,80,80,0.3);
-    color: rgba(255,110,110,0.75); font-size: 9px; cursor: pointer;
+    color: rgba(255,110,110,0.75); font-size: 11px; cursor: pointer;
     transition: all 0.15s; line-height: 1; padding: 0;
   }
   .req-item:hover .req-cancel-btn { display: flex; }
@@ -1124,7 +1377,7 @@ const css = `
   .zeus-reorder-notif {
     padding: 8px 12px; margin-bottom: 8px; border-radius: 4px;
     background: rgba(232,184,75,0.05); border: 1px solid rgba(232,184,75,0.22);
-    font-size: 9px; color: rgba(232,184,75,0.65); line-height: 1.55;
+    font-size: 11px; color: rgba(232,184,75,0.65); line-height: 1.55;
     animation: mode-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
   }
 
@@ -1140,11 +1393,11 @@ const css = `
   .queue-slot-pill.t2.occupied { border-color: rgba(240,192,96,0.4); background: rgba(240,192,96,0.05); box-shadow: 0 0 10px rgba(240,192,96,0.08); }
   .queue-slot-pill.t3.occupied { border-color: rgba(200,150,10,0.4); background: rgba(200,150,10,0.05); box-shadow: 0 0 10px rgba(200,150,10,0.08); }
   .queue-pill-label {
-    font-family: 'Cinzel', serif; font-size: 7px; letter-spacing: 0.1em;
+    font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.1em;
     color: var(--muted); margin-bottom: 2px; text-transform: uppercase;
   }
   .queue-slot-pill.occupied .queue-pill-label { color: var(--text); }
-  .queue-pill-count { font-family: 'JetBrains Mono', monospace; font-size: 11px; color: var(--dim); }
+  .queue-pill-count { font-family: 'JetBrains Mono', monospace; font-size: 13px; color: var(--dim); }
   .queue-slot-pill.t1.occupied .queue-pill-count { color: var(--done); text-shadow: 0 0 8px rgba(94,232,176,0.5); }
   .queue-slot-pill.t2.occupied .queue-pill-count { color: var(--active); text-shadow: 0 0 8px rgba(240,192,96,0.5); }
   .queue-slot-pill.t3.occupied .queue-pill-count { color: var(--gold2); text-shadow: 0 0 8px rgba(200,150,10,0.5); }
@@ -1160,24 +1413,24 @@ const css = `
   }
   .queue-item-pos {
     display: inline-flex; align-items: center; justify-content: center;
-    font-family: 'Cinzel', serif; font-size: 7px; letter-spacing: 0.05em;
+    font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.05em;
     color: var(--active); border: 1px solid rgba(240,192,96,0.4);
     background: rgba(240,192,96,0.06); border-radius: 2px;
     padding: 0 4px; min-width: 18px; flex-shrink: 0;
   }
-  .queue-item-tier { font-family: 'Cinzel', serif; font-size: 7px; color: var(--dim); flex-shrink: 0; }
-  .queue-item-user { font-family: 'Cinzel', serif; font-size: 7px; color: var(--muted); flex-shrink: 0; opacity: 0.8; }
-  .queue-item-text { font-size: 9px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .queue-item-wait { font-size: 7px; color: rgba(232,184,75,0.55); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; letter-spacing: 0.04em; }
+  .queue-item-tier { font-family: 'Cinzel', serif; font-size: 11px; color: rgba(255,255,255,0.85); flex-shrink: 0; }
+  .queue-item-user { font-family: 'Cinzel', serif; font-size: 11px; color: rgba(255,255,255,0.85); flex-shrink: 0; }
+  .queue-item-text { font-size: 11px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .queue-item-wait { font-size: 9px; color: rgba(232,184,75,0.55); font-family: 'JetBrains Mono', monospace; flex-shrink: 0; letter-spacing: 0.04em; }
   .queue-item-cancel {
     opacity: 0; transition: opacity 0.15s;
     background: rgba(255,60,60,0.08); border: 1px solid rgba(255,80,80,0.25);
-    color: rgba(255,110,110,0.7); font-size: 8px; cursor: pointer;
+    color: rgba(255,110,110,0.7); font-size: 10px; cursor: pointer;
     border-radius: 2px; padding: 1px 4px; flex-shrink: 0; line-height: 1;
   }
   .queue-item:hover .queue-item-cancel { opacity: 1; }
   .queue-item-cancel:hover { background: rgba(255,60,60,0.2); color: #ff6060; }
-  .queue-empty-line { font-size: 9px; color: var(--dim); text-align: center; padding: 8px 0; letter-spacing: 0.08em; }
+  .queue-empty-line { font-size: 11px; color: var(--dim); text-align: center; padding: 8px 0; letter-spacing: 0.08em; }
 
   /* ── Gaia conversation cards ──────────────────────────────────── */
   .gaia-conv-card {
@@ -1187,16 +1440,16 @@ const css = `
   }
   .gaia-conv-card:hover { border-color: rgba(120,216,122,0.35); background: rgba(3,14,6,0.75); }
   .gaia-conv-card.active-conv { border-color: rgba(120,216,122,0.55); background: rgba(3,16,6,0.85); box-shadow: 0 0 10px rgba(120,216,122,0.08); }
-  .gaia-conv-card-time { font-size: 8px; color: rgba(120,216,122,0.45); font-family: 'Cinzel', serif; letter-spacing: 0.06em; margin-bottom: 4px; }
+  .gaia-conv-card-time { font-size: 10px; color: rgba(120,216,122,0.45); font-family: 'Cinzel', serif; letter-spacing: 0.06em; margin-bottom: 4px; }
   .gaia-conv-card.active-conv .gaia-conv-card-time { color: rgba(120,216,122,0.7); }
-  .gaia-conv-card-preview { font-size: 9px; color: var(--text); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .gaia-conv-card-count { font-size: 8px; color: var(--muted); margin-top: 3px; }
+  .gaia-conv-card-preview { font-size: 11px; color: var(--text); line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .gaia-conv-card-count { font-size: 10px; color: var(--muted); margin-top: 3px; }
 
   /* ── Gaia NEW CHAT button ─────────────────────────────────────────── */
   .gaia-new-chat-btn {
     background: transparent; border: 1px solid rgba(120,216,122,0.22);
     color: rgba(120,216,122,0.5); border-radius: 16px; padding: 4px 14px;
-    font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.12em;
+    font-family: 'Cinzel', serif; font-size: 11px; letter-spacing: 0.12em;
     cursor: pointer; transition: all 0.2s;
   }
   .gaia-new-chat-btn:hover { border-color: rgba(120,216,122,0.6); color: var(--gaia); }
@@ -1315,7 +1568,7 @@ function CouncilThread({ messages }) {
         </div>
       ))}
       {messages.length === 0 && (
-        <div style={{ color: "var(--muted)", fontSize: 10 }}>Awaiting council...</div>
+        <div style={{ color: "var(--muted)", fontSize: 12 }}>Awaiting council...</div>
       )}
     </>
   );
@@ -1434,7 +1687,7 @@ function CouncilTriangle({ classifying = false }) {
       <canvas ref={canvasRef} style={{ width: 420, height: 420, opacity: 0.9 }} />
       <div style={{
         fontFamily: "Cinzel, serif",
-        fontSize: 9,
+        fontSize: 11,
         letterSpacing: "0.25em",
         color: classifying ? "var(--gold2)" : "var(--muted)",
         marginTop: 16,
@@ -1964,13 +2217,13 @@ function FruitDetailContent({ fruitId, ripeness, growthHistory }) {
       </div>
       <div className="fruit-panel-section">
         <div className="fruit-panel-label">Domain</div>
-        <div style={{ fontSize: 9, color: "var(--text)", lineHeight: 1.7 }}>{info.domain}</div>
-        <div style={{ fontSize: 9, color: "var(--muted)", lineHeight: 1.7, marginTop: 5 }}>{info.desc}</div>
+        <div style={{ fontSize: 11, color: "var(--text)", lineHeight: 1.7 }}>{info.domain}</div>
+        <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.7, marginTop: 5 }}>{info.desc}</div>
       </div>
       <div className="fruit-panel-section">
         <div className="fruit-panel-label">Growth Directives {growthHistory.length > 0 ? `(${growthHistory.length})` : ""}</div>
         {growthHistory.length === 0 && (
-          <div style={{ fontSize: 9, color: "var(--dim)", lineHeight: 1.7 }}>No directives issued yet. Gaia is watching.</div>
+          <div style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.7 }}>No directives issued yet. Gaia is watching.</div>
         )}
         {growthHistory.slice(-6).reverse().map((g, i) => (
           <div key={i} className="fruit-directive-item">
@@ -2031,6 +2284,15 @@ export default function OlympusDashboard() {
   const [queueState,         setQueueState]         = useState([]);   // full queue_update list
   const [zeusReorderNotif,   setZeusReorderNotif]   = useState(null); // { reason, ts }
   const [sendPriority,       setSendPriority]       = useState(false);
+  const [routeOpen,          setRouteOpen]          = useState(false);
+  const [expandedPrompts,   setExpandedPrompts]   = useState(new Set());
+  const [expandedQueueItems, setExpandedQueueItems] = useState(new Set());
+  const [cinematicOpen, setCinematicOpen] = useState(false);
+  const cinematicCouncilRef = useRef(null);
+
+  // ── LLM-powered mission titles (cached) ────────────────────────────────────
+  const [missionTitles, setMissionTitles] = useState({});
+  const titleFetchQueue = useRef(new Set());
 
   // ── Gaia conversation state ───────────────────────────────────────────────
   // Each conversation: { id, userId, timestamp, messages: [{role, text, timestamp}] }
@@ -2078,8 +2340,69 @@ export default function OlympusDashboard() {
   // When gaiaMode is active, override all other mode styling/routing
   const effectiveMode = gaiaMode ? "gaia" : mode;
 
-  // ── Clock ──────────────────────────────────────────────────────────────────
+
+  // ── Cinematic takeover lifecycle ─────────────────────────────────────────────
+  const isCinematicTier = mode === "tier2" || mode === "tier3";
+
+  // Auto-open when a T2/T3 mission activates
   useEffect(() => {
+    if (activeMission?.status === "active" && isCinematicTier) {
+      setCinematicOpen(true);
+    }
+  }, [activeMissionId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Close when mission clears, mode leaves T2/T3, or view switches away from council
+  useEffect(() => {
+    if (!cinematicOpen) return;
+    if (!activeMission || !isCinematicTier || topView !== "council") {
+      setCinematicOpen(false);
+    }
+  }, [activeMission, isCinematicTier, topView, cinematicOpen]);
+
+  // Auto-close 3s after mission completes
+  useEffect(() => {
+    if (!cinematicOpen || stage !== "done") return;
+    const t = setTimeout(() => setCinematicOpen(false), 3000);
+    return () => clearTimeout(t);
+  }, [cinematicOpen, stage]);
+
+  // ESC to close
+  useEffect(() => {
+    if (!cinematicOpen) return;
+    const handler = (e) => { if (e.key === "Escape") setCinematicOpen(false); };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [cinematicOpen]);
+
+  // Auto-scroll council right panel
+  useEffect(() => {
+    if (!cinematicOpen || !cinematicCouncilRef.current) return;
+    cinematicCouncilRef.current.scrollTop = cinematicCouncilRef.current.scrollHeight;
+  }, [cinematicOpen, councilMessages.length, councilBackendMessages.length]);
+
+  // ── Clock ──────────────────────────────────────────────────────────────────
+  
+  // ── Fetch LLM titles for missions/queue items ─────────────────────────────
+  const getMissionTitle = useCallback((id, text) => {
+    if (missionTitles[id] || titleFetchQueue.current.has(id)) return missionTitles[id] || smartNameFallback(text);
+    titleFetchQueue.current.add(id);
+    fetch(API_URL + "/api/name", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: text }),
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.title) {
+          setMissionTitles(prev => ({ ...prev, [id]: data.title }));
+        }
+        titleFetchQueue.current.delete(id);
+      })
+      .catch(() => { titleFetchQueue.current.delete(id); });
+    return smartNameFallback(text);
+  }, [missionTitles]);
+
+useEffect(() => {
     const t = setInterval(() => setTime(new Date().toLocaleTimeString()), 1000);
     return () => clearInterval(t);
   }, []);
@@ -2211,6 +2534,7 @@ export default function OlympusDashboard() {
                 councilBackendMessages: [],
                 progress: { zeus: 0, poseidon: 0, hades: 0 },
                 nodeThoughts: {},
+              streamingContent: null,
                 nodeTasks: {},
                 runStats: null,
                 output: null,
@@ -2356,6 +2680,16 @@ export default function OlympusDashboard() {
           break;
         }
 
+        case "agent_stream": {
+          if (!msg.id) return;
+          setMissions(prev => {
+            if (!prev[msg.id]) return prev;
+            const m = prev[msg.id];
+            return { ...prev, [msg.id]: { ...m, streamingContent: msg.full } };
+          });
+          break;
+        }
+
         case "council_message": {
           if (!msg.id) return;
           setMissions(prev => {
@@ -2447,6 +2781,7 @@ export default function OlympusDashboard() {
                 status: "done",
                 stage: "done",
                 output: msg.output ?? null,
+                streamingContent: null,
                 elapsed: msg.elapsed ?? null,
                 runStats: { elapsed: msg.elapsed, tokens: msg.tokens, councils: msg.councils },
               },
@@ -2926,7 +3261,7 @@ export default function OlympusDashboard() {
             {activeRequest?.channel && (
               <div className="panel-section">
                 <div className="panel-section-label">Origin channel</div>
-                <div style={{ display: "inline-flex", padding: "4px 12px", borderRadius: 3, fontSize: 9, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", background: "rgba(94,232,176,0.1)", border: "1px solid rgba(94,232,176,0.4)", color: "var(--done)" }}>
+                <div style={{ display: "inline-flex", padding: "4px 12px", borderRadius: 3, fontSize: 11, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", background: "rgba(94,232,176,0.1)", border: "1px solid rgba(94,232,176,0.4)", color: "var(--done)" }}>
                   {activeRequest.channel.toUpperCase()}
                 </div>
               </div>
@@ -2957,8 +3292,8 @@ export default function OlympusDashboard() {
     .filter(m => m.target !== "gaia") // Gaia is isolated — never in B3C history
     .sort((a, b) => b.timestamp - a.timestamp)
     .filter(m => {
-      if (sidebarTab === "CARSON") return missionBelongsTo(m, USER_IDS.CARSON, 'carson') || m.isWarRoom;
-      if (sidebarTab === "TYLER")  return missionBelongsTo(m, USER_IDS.TYLER,  'tyler')  || m.isWarRoom;
+      if (sidebarTab === "CARSON") return missionBelongsTo(m, USER_IDS.CARSON, 'carson');
+      if (sidebarTab === "TYLER")  return missionBelongsTo(m, USER_IDS.TYLER,  'tyler');
       return true; // ALL
     });
 
@@ -3018,9 +3353,17 @@ export default function OlympusDashboard() {
                   }
                   {tierLabel && <span className="queue-item-tier">{tierLabel}</span>}
                   {userLabel && <span className="queue-item-user">{userLabel}</span>}
-                  <span className="queue-item-text">{q.text.slice(0, 40)}{q.text.length > 40 ? "…" : ""}</span>
+                  <span className="queue-item-name">{missionTitles[q.id] || getMissionTitle(q.id, q.text)}</span>
+                  <button
+                    className={`queue-expand-btn ${expandedQueueItems.has(q.id) ? "open" : ""}`}
+                    onClick={(e) => { e.stopPropagation(); setExpandedQueueItems(prev => { const next = new Set(prev); next.has(q.id) ? next.delete(q.id) : next.add(q.id); return next; }); }}
+                    title="Show full input"
+                  >▾</button>
                   {q.status === "pending" && q.estimatedWait && <span className="queue-item-wait">{q.estimatedWait}</span>}
-                  <button className="queue-item-cancel" onClick={(e) => handleCancelMission(q.id, e)} title="Cancel">✕</button>
+                  <button className="queue-item-cancel" onClick={(e) => handleCancelMission(q.id, e)} title="Cancel">🗑</button>
+                  {expandedQueueItems.has(q.id) && (
+                    <div className="queue-expanded-text">{q.text}</div>
+                  )}
                 </div>
               );
             })
@@ -3043,7 +3386,7 @@ export default function OlympusDashboard() {
           ))}
         </div>
         {missionList.length === 0 ? (
-          <div style={{ fontSize: 9, color: "var(--muted)", lineHeight: 1.7 }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.7 }}>
             {sidebarTab === "ALL" ? "No missions yet. Waiting for activity." : `No missions from ${sidebarTab} yet.`}
           </div>
         ) : (
@@ -3057,22 +3400,29 @@ export default function OlympusDashboard() {
             >
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 4 }}>
                 <span className={`req-status ${m.status === "cancelled" ? "cancelled" : m.status}`} />
-                <span className="req-text" style={{ flex: 1 }}>{m.text.slice(0, 46)}{m.text.length > 46 ? "…" : ""}</span>
-                {isCancellable && (
+                <span className="req-text" style={{ flex: 1 }}>{missionTitles[m.id] || getMissionTitle(m.id, m.text)}</span>
+                <button
+                  className={`req-expand-btn ${expandedPrompts.has(m.id) ? "open" : ""}`}
+                  onClick={(e) => { e.stopPropagation(); setExpandedPrompts(prev => { const next = new Set(prev); next.has(m.id) ? next.delete(m.id) : next.add(m.id); return next; }); }}
+                  title="Show full prompt"
+                >▾</button>
+                {isCancellable ? (
                   <button
-                    className="req-cancel-btn"
+                    className="req-trash-btn"
                     onClick={(e) => handleCancelMission(m.id, e)}
                     title="Cancel mission"
-                  >✕</button>
-                )}
-                {!isCancellable && (
+                  >🗑</button>
+                ) : (
                   <button
-                    className="req-cancel-btn"
+                    className="req-trash-btn"
                     onClick={(e) => handleDeleteMission(m.id, e)}
                     title="Delete mission"
-                  >✕</button>
+                  >🗑</button>
                 )}
               </div>
+              {expandedPrompts.has(m.id) && (
+                <div className="req-expanded-prompt">{m.text}</div>
+              )}
               <div className="req-time">
                 {new Date(m.timestamp).toLocaleTimeString()}
                 {m.elapsed ? ` · ${(m.elapsed / 1000).toFixed(1)}s` : ""}
@@ -3105,14 +3455,14 @@ export default function OlympusDashboard() {
       <div className="sidebar-section" style={{ flex: 1 }}>
         <div className="sidebar-label">Gaia — Last Report</div>
         {gaiaReport ? (
-          <div style={{ fontSize: 9, color: "var(--muted)", lineHeight: 1.7 }}>
-            <div style={{ color: "var(--gaia)", marginBottom: 6, fontFamily: "Cinzel, serif", fontSize: 9, letterSpacing: "0.08em" }}>
+          <div style={{ fontSize: 11, color: "var(--muted)", lineHeight: 1.7 }}>
+            <div style={{ color: "var(--gaia)", marginBottom: 6, fontFamily: "Cinzel, serif", fontSize: 11, letterSpacing: "0.08em" }}>
               GAIA · {gaiaReport.timestamp}
             </div>
             {gaiaReport.text}
           </div>
         ) : (
-          <div style={{ fontSize: 9, color: "var(--dim)", lineHeight: 1.7 }}>Gaia's nightly retrospective will appear here.</div>
+          <div style={{ fontSize: 11, color: "var(--dim)", lineHeight: 1.7 }}>Gaia's nightly retrospective will appear here.</div>
         )}
       </div>
     </div>
@@ -3135,7 +3485,7 @@ export default function OlympusDashboard() {
             <div className="tier1-response">{outputText}</div>
           )}
           {!activeMission && (
-            <div style={{ fontSize: 10, color: "var(--muted)", fontFamily: "Cinzel, serif", letterSpacing: "0.15em", textAlign: "center", marginTop: 8 }}>
+            <div style={{ fontSize: 12, color: "var(--muted)", fontFamily: "Cinzel, serif", letterSpacing: "0.15em", textAlign: "center", marginTop: 8 }}>
               Direct line · Single response
             </div>
           )}
@@ -3168,6 +3518,23 @@ export default function OlympusDashboard() {
     return (
       <>
         {renderSidebar()}
+        {renderTier2Content()}
+      </>
+    );
+  };
+
+  const renderTier2Content = () => {
+    const isCoordinating = stage === "council_initial";
+    const isExecuting    = stage === "execution";
+    const isReviewing    = stage === "council_backend";
+    const isDone         = stage === "done";
+    const isActive       = activeMission?.status === "active";
+    const getCardClass = (agentKey) => {
+      const s = getExecStatus(agentKey);
+      if (!s) return isDone || isReviewing ? `${agentKey}-done` : isExecuting ? "working" : "idle";
+      return s.status;
+    };
+    return (
         <div className="tier2-area">
           {activeRequest ? (
             <div className="tier2-request-pill">{activeRequest.text}</div>
@@ -3182,7 +3549,7 @@ export default function OlympusDashboard() {
               <span className="tier2-status-dot" />
               {isCoordinating ? "COORDINATING" : isExecuting ? "EXECUTING IN PARALLEL" : isReviewing ? "SINGLE REVIEW PASS" : "ACTIVE"}
               {phaseElapsed !== null && (
-                <span style={{ marginLeft: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 9, color: "rgba(232,184,75,0.5)" }}>
+                <span style={{ marginLeft: 10, fontFamily: "JetBrains Mono, monospace", fontSize: 11, color: "rgba(232,184,75,0.5)" }}>
                   {phaseElapsed}s
                 </span>
               )}
@@ -3265,7 +3632,7 @@ export default function OlympusDashboard() {
                 <span>✦</span>
                 <span>Synthesized Output</span>
                 {runStats?.elapsed && (
-                  <span style={{ marginLeft: "auto", fontSize: 9, color: "rgba(94,232,176,0.5)", fontFamily: "JetBrains Mono, monospace" }}>
+                  <span style={{ marginLeft: "auto", fontSize: 11, color: "rgba(94,232,176,0.5)", fontFamily: "JetBrains Mono, monospace" }}>
                     {(runStats.elapsed / 1000).toFixed(1)}s
                   </span>
                 )}
@@ -3276,7 +3643,6 @@ export default function OlympusDashboard() {
 
           <div style={{ height: 40 }} />
         </div>
-      </>
     );
   };
 
@@ -3298,14 +3664,20 @@ export default function OlympusDashboard() {
           <div className="direct-symbol">{cfg.symbol}</div>
           <div className="direct-agent-label">{cfg.label}</div>
           <div className="direct-channel-label">{cfg.channel}</div>
-          {isThinking && !outputText && (
+          {isThinking && !outputText && !activeMission?.streamingContent && (
             <div className="direct-thinking">processing . . .</div>
+          )}
+          {isThinking && !outputText && activeMission?.streamingContent && (
+            <div className="direct-streaming">
+              {activeMission.streamingContent}
+              <span className="streaming-cursor" />
+            </div>
           )}
           {outputText && (
             <div className="direct-response">{outputText}</div>
           )}
           {!activeMission && (
-            <div style={{ fontSize: 9, color: "var(--muted)", fontFamily: "Cinzel, serif", letterSpacing: "0.15em", marginTop: 8 }}>
+            <div style={{ fontSize: 11, color: "var(--muted)", fontFamily: "Cinzel, serif", letterSpacing: "0.15em", marginTop: 8 }}>
               Direct channel · Awaiting transmission
             </div>
           )}
@@ -3324,7 +3696,7 @@ export default function OlympusDashboard() {
       return (
         <>
           {renderSidebar()}
-          <CouncilTriangle />
+          <CouncilChamber nodeHealth={nodeHealth} />
         </>
       );
     }
@@ -3332,6 +3704,27 @@ export default function OlympusDashboard() {
     return (
       <>
         {renderSidebar()}
+        {renderTier3Content()}
+        {/* Detail panel */}
+        <div className={`detail-panel ${panel ? "" : "closed"}`}>
+          {panel && (
+            <>
+              <div className="panel-header">
+                <div className="panel-title">{panel.title}</div>
+                <button className="panel-close" onClick={() => setSelectedNode(null)}>✕</button>
+              </div>
+              <div className="panel-body">{panel.content}</div>
+            </>
+          )}
+        </div>
+      </>
+    );
+  };
+
+  const renderTier3Content = () => {
+    const execStage = stage === "execution";
+    const execDone  = ["council_backend", "done"].includes(stage);
+    return (
         <div className="flow-area pipeline-content">
           <div className="flow-container">
 
@@ -3359,7 +3752,7 @@ export default function OlympusDashboard() {
 
               {/* Request pill */}
               <div className="flow-row">
-                <div style={{ padding: "10px 24px", background: "var(--bg3)", border: "1px solid var(--border2)", borderRadius: 4, fontSize: 10, color: activeRequest ? "var(--text)" : "var(--muted)", fontFamily: activeRequest ? "JetBrains Mono, monospace" : "Cinzel, serif", letterSpacing: activeRequest ? "0" : "0.15em", maxWidth: 400, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <div style={{ padding: "10px 24px", background: "var(--bg3)", border: "1px solid var(--border2)", borderRadius: 4, fontSize: 12, color: activeRequest ? "var(--text)" : "var(--muted)", fontFamily: activeRequest ? "JetBrains Mono, monospace" : "Cinzel, serif", letterSpacing: activeRequest ? "0" : "0.15em", maxWidth: 400, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {activeRequest ? activeRequest.text : "↓ AWAITING REQUEST"}
                 </div>
               </div>
@@ -3454,11 +3847,11 @@ export default function OlympusDashboard() {
                         <span className={`node-status-icon ${nodeClass}`}>{statusIcon}</span>
                       </div>
                       <div className="node-name">{agent.name}</div>
-                      <div className="node-role" style={execSt?.status === "failed" ? { color: "#ff7070", fontSize: 8 } : {}}>
+                      <div className="node-role" style={execSt?.status === "failed" ? { color: "#ff7070", fontSize: 10 } : {}}>
                         {roleDisplay}
                       </div>
                       {elapsed !== null && (
-                        <div style={{ fontSize: 8, color: "var(--active)", fontFamily: "JetBrains Mono, monospace", marginTop: 4 }}>{elapsed}s</div>
+                        <div style={{ fontSize: 10, color: "var(--active)", fontFamily: "JetBrains Mono, monospace", marginTop: 4 }}>{elapsed}s</div>
                       )}
                       <div className="node-progress">
                         <div className="node-progress-bar" style={{ width: execSt?.status === "failed" ? "100%" : `${agent.prog}%`, background: execSt?.status === "failed" ? "#ff5050" : undefined }} />
@@ -3556,7 +3949,7 @@ export default function OlympusDashboard() {
                   <div className="flow-row">
                     <div className="output-text-block">
                       <div className="output-text-header">
-                        <span style={{ fontSize: 14 }}>✦</span>
+                        <span style={{ fontSize: 16 }}>✦</span>
                         <span>Synthesized Output</span>
                         {runStats && (
                           <span className="output-timing">
@@ -3576,20 +3969,6 @@ export default function OlympusDashboard() {
             </div>
           </div>
         </div>
-
-        {/* Detail panel */}
-        <div className={`detail-panel ${panel ? "" : "closed"}`}>
-          {panel && (
-            <>
-              <div className="panel-header">
-                <div className="panel-title">{panel.title}</div>
-                <button className="panel-close" onClick={() => setSelectedNode(null)}>✕</button>
-              </div>
-              <div className="panel-body">{panel.content}</div>
-            </>
-          )}
-        </div>
-      </>
     );
   };
 
@@ -3708,7 +4087,7 @@ export default function OlympusDashboard() {
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 3 }}>
                     {userLabel && (
-                      <span style={{ fontSize: 7, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", color: "var(--gaia)", opacity: 0.75 }}>
+                      <span style={{ fontSize: 9, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", color: "var(--gaia)", opacity: 0.75 }}>
                         {userLabel}
                       </span>
                     )}
@@ -3725,24 +4104,24 @@ export default function OlympusDashboard() {
           <div className="gaia-sidebar-label">Gaia — Last Retrospective</div>
           {lastRetro ? (
             <>
-              <div style={{ fontSize: 8, color: "var(--gaia)", opacity: 0.65, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", marginBottom: 7 }}>
+              <div style={{ fontSize: 10, color: "var(--gaia)", opacity: 0.65, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", marginBottom: 7 }}>
                 {new Date(lastRetro.timestamp).toLocaleString()} · {lastRetro.missions_reviewed} missions
               </div>
-              <div style={{ fontSize: 9, color: "rgba(148,188,148,0.72)", lineHeight: 1.75 }}>
+              <div style={{ fontSize: 11, color: "rgba(148,188,148,0.72)", lineHeight: 1.75 }}>
                 {lastRetro.text.slice(0, 230)}{lastRetro.text.length > 230 ? "…" : ""}
               </div>
             </>
           ) : gaiaReport ? (
             <>
-              <div style={{ fontSize: 8, color: "var(--gaia)", opacity: 0.65, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", marginBottom: 7 }}>
+              <div style={{ fontSize: 10, color: "var(--gaia)", opacity: 0.65, fontFamily: "Cinzel, serif", letterSpacing: "0.08em", marginBottom: 7 }}>
                 GAIA · {gaiaReport.timestamp}
               </div>
-              <div style={{ fontSize: 9, color: "rgba(148,188,148,0.72)", lineHeight: 1.75 }}>
+              <div style={{ fontSize: 11, color: "rgba(148,188,148,0.72)", lineHeight: 1.75 }}>
                 {gaiaReport.text}
               </div>
             </>
           ) : (
-            <div style={{ fontSize: 9, color: "rgba(120,216,122,0.22)", lineHeight: 1.75, fontStyle: "italic" }}>
+            <div style={{ fontSize: 11, color: "rgba(120,216,122,0.22)", lineHeight: 1.75, fontStyle: "italic" }}>
               Gaia's nightly retrospective will appear here at 23:00.
             </div>
           )}
@@ -3818,8 +4197,8 @@ export default function OlympusDashboard() {
                   return (
                     <div className="gaia-council-empty">
                       <div style={{ fontSize: 28, marginBottom: 10 }}>⚖</div>
-                      <div style={{ fontSize: 12, letterSpacing: "0.15em" }}>OLYMPUS CHANNEL · OPEN</div>
-                      <div style={{ opacity: 0.45, marginTop: 8, fontSize: 11 }}>
+                      <div style={{ fontSize: 14, letterSpacing: "0.15em" }}>OLYMPUS CHANNEL · OPEN</div>
+                      <div style={{ opacity: 0.45, marginTop: 8, fontSize: 13 }}>
                         Send a message to initiate a council conversation
                       </div>
                     </div>
@@ -3848,7 +4227,7 @@ export default function OlympusDashboard() {
                           <span className="gaia-thinking-dot" />
                           <span className="gaia-thinking-dot" />
                           <span className="gaia-thinking-dot" />
-                          <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 11 }}>Opening the OLYMPUS CHANNEL…</span>
+                          <span style={{ marginLeft: 8, opacity: 0.7, fontSize: 13 }}>Opening the OLYMPUS CHANNEL…</span>
                         </div>
                       </div>
                     )}
@@ -4024,10 +4403,67 @@ export default function OlympusDashboard() {
   };
 
   // ── Route to correct view ──────────────────────────────────────────────────
+
+  // ── Cinematic Takeover Render ──────────────────────────────────────────────
+  const renderCinematicTakeover = () => {
+    if (!cinematicOpen || !activeMission) return null;
+
+    const tierLabel = activeMission.tier === "TIER_2" ? "TIER II" : activeMission.tier === "TIER_3" ? "TIER III" : activeMission.tier || "TIER";
+
+    // Reuse the existing mode view (renderTier2 or renderTier3) for the left panel
+    const leftContent = mode === "tier2" ? renderTier2() : renderTier3();
+
+    return (
+      <div className="cinematic-takeover">
+        <button className="cinematic-exit" onClick={() => setCinematicOpen(false)}>\u2715 EXIT</button>
+
+        {/* LEFT PANEL \u2014 existing flow/tier view, resized to fit */}
+        <div className="cinematic-left">
+          <div className="cinematic-tier-badge">
+            <span className="tier-label">{tierLabel}</span>
+            <span className="cinematic-mission-text">{activeRequest?.text || "Mission active"}</span>
+          </div>
+          <div className="cinematic-flow-wrap">
+            {leftContent}
+          </div>
+        </div>
+
+        {/* RIGHT PANEL \u2014 council conversation */}
+        <div className="cinematic-right">
+          <div className="cinematic-right-header">COUNCIL DELIBERATION</div>
+
+          <div className="cinematic-council-section" ref={cinematicCouncilRef}>
+            {councilMessages.length > 0 && (
+              <>
+                <div className="cinematic-phase-label">INITIAL COUNCIL</div>
+                <VoteStamps messages={councilMessages} missionId={activeMissionId} />
+                <CouncilThread messages={councilMessages} />
+              </>
+            )}
+
+            {councilBackendMessages.length > 0 && (
+              <>
+                <div className="cinematic-phase-label" style={{ marginTop: 20 }}>BACKEND REVIEW</div>
+                <VoteStamps messages={councilBackendMessages} missionId={activeMissionId} />
+                <CouncilThread messages={councilBackendMessages} />
+              </>
+            )}
+
+            {councilMessages.length === 0 && councilBackendMessages.length === 0 && (
+              <div style={{ color: "var(--muted)", fontSize: 12, textAlign: "center", marginTop: 40 }}>
+                Council has not convened yet...
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderModeView = () => {
     if (gaiaMode) return renderGaiaTree();
     switch (mode) {
-      case "classifying":   return <>{renderSidebar()}<CouncilTriangle classifying /></>;
+      case "classifying":   return <>{renderSidebar()}<CouncilChamber nodeHealth={nodeHealth} classifying /></>;
       case "tier1":         return renderTier1();
       case "tier2":         return renderTier2();
       case "zeus_protocol": return renderDirect();
@@ -4043,6 +4479,9 @@ export default function OlympusDashboard() {
       <style>{FONTS + css}</style>
       <div className={`dashboard mode-${effectiveMode}`}>
         <StarField />
+
+        {/* Cinematic takeover for T2/T3 */}
+        {renderCinematicTakeover()}
 
         {/* Topbar */}
         <div className="topbar">
@@ -4078,13 +4517,31 @@ export default function OlympusDashboard() {
               >NODE HEALTH {nodeHealthOpen ? "▴" : "▾"}</button>
 
               {nodeHealthOpen && (
-                <div className="node-health-dropdown">
-                  {["ZEUS", "POSEIDON", "HADES", "GAIA"].map(n => (
-                    <div key={n} className={`node-chip ${nodeHealth[n] === true ? "online" : nodeHealth[n] === false ? "offline" : ""}`}>
-                      <span className="dot" />
-                      {n}
-                    </div>
-                  ))}
+                <div className="node-health-expanded">
+                  {["ZEUS", "POSEIDON", "HADES", "GAIA"].map(n => {
+                    const headStatus = nodeHealth[n] === true ? "online" : nodeHealth[n] === false ? "offline" : "";
+                    const quorum = QUORUM_MAP[n] || [];
+                    return (
+                      <div key={n} className="node-health-group">
+                        <div className="node-health-head">
+                          <div className={`node-chip ${headStatus}`}>
+                            <span className="dot" />
+                            {n}
+                          </div>
+                        </div>
+                        {quorum.length > 0 && (
+                          <div className="quorum-row">
+                            {quorum.map(q => (
+                              <div key={q} className={`quorum-chip ${headStatus}`}>
+                                <span className="dot" />
+                                {q.toUpperCase()}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -4092,7 +4549,7 @@ export default function OlympusDashboard() {
 
           <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
             {/* WebSocket status */}
-            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 4, background: "var(--bg3)", border: `1px solid ${wsStatus === "live" ? "rgba(94,232,176,0.3)" : wsStatus === "connecting" ? "rgba(240,192,96,0.3)" : "rgba(255,80,80,0.3)"}`, fontSize: 9, letterSpacing: "0.1em", color: wsStatus === "live" ? "var(--done)" : wsStatus === "connecting" ? "var(--active)" : "#ff5050" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 4, background: "var(--bg3)", border: `1px solid ${wsStatus === "live" ? "rgba(94,232,176,0.3)" : wsStatus === "connecting" ? "rgba(240,192,96,0.3)" : "rgba(255,80,80,0.3)"}`, fontSize: 11, letterSpacing: "0.1em", color: wsStatus === "live" ? "var(--done)" : wsStatus === "connecting" ? "var(--active)" : "#ff5050" }}>
               <span style={{ width: 5, height: 5, borderRadius: "50%", background: wsStatus === "live" ? "var(--done)" : wsStatus === "connecting" ? "var(--active)" : "#ff5050", boxShadow: wsStatus === "live" ? "0 0 5px var(--done)" : "none", animation: wsStatus === "live" ? "pulse-dot 2s ease infinite" : "none" }} />
               {wsStatus === "live" ? "LIVE" : wsStatus === "connecting" ? "CONNECTING" : "DISCONNECTED"}
             </div>
@@ -4118,63 +4575,73 @@ export default function OlympusDashboard() {
         {/* Input bar */}
         <div className={`input-bar${gaiaMode ? " gaia-input-bar" : ""}`}>
           <div className="input-inner">
-            <textarea
-              className="input-textarea"
-              placeholder={
-                gaiaMode && gaiaViewMode === "council" ? "Open the OLYMPUS CHANNEL — address the B3C Council…" :
-                gaiaMode                ? "Speak to Gaia — she is listening..." :
-                mode === "zeus_protocol" ? "Transmit to Zeus directly..." :
-                mode === "poseidon"      ? "Speak to Poseidon..." :
-                mode === "hades"         ? "Speak to Hades..." :
-                mode === "tier1"         ? "Ask Zeus directly..." :
-                "Enter a request for the council..."
-              }
-              value={sendText}
-              onChange={e => setSendText(e.target.value)}
-              onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) gaiaMode ? handleGaiaSend() : handleSend(); }}
-              disabled={sending}
-            />
-            <div className="input-controls">
-              {!gaiaMode && (
-                <div className="target-btns">
-                  {[
-                    { id: "B3C_COUNCIL",   label: "B3C COUNCIL" },
-                    { id: "ZEUS_PROTOCOL", label: "ZEUS PROTOCOL" },
-                    { id: "POSEIDON",      label: "POSEIDON" },
-                    { id: "HADES",         label: "HADES" },
-                  ].map(t => (
-                    <button
-                      key={t.id}
-                      className={`target-btn ${sendTarget === t.id ? "active" : ""}`}
-                      onClick={() => setSendTarget(t.id)}
-                      disabled={sending}
-                    >
-                      {t.label}
+            <div className="input-unified">
+              <textarea
+                className="input-textarea"
+                placeholder={
+                  gaiaMode && gaiaViewMode === "council" ? "Open the OLYMPUS CHANNEL — address the B3C Council…" :
+                  gaiaMode                ? "Speak to Gaia — she is listening..." :
+                  mode === "zeus_protocol" ? "Transmit to Zeus directly..." :
+                  mode === "poseidon"      ? "Speak to Poseidon..." :
+                  mode === "hades"         ? "Speak to Hades..." :
+                  mode === "tier1"         ? "Ask Zeus directly..." :
+                  "Enter a request for the council..."
+                }
+                value={sendText}
+                onChange={e => setSendText(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) gaiaMode ? handleGaiaSend() : handleSend(); }}
+                disabled={sending}
+              />
+              <div className="input-controls">
+                {!gaiaMode && (
+                  <div className="route-selector">
+                    <button className="route-current" onClick={() => setRouteOpen(o => !o)} disabled={sending}>
+                      <span className={`route-chevron ${routeOpen ? "open" : ""}`}>▾</span>
+                      {({B3C_COUNCIL:"B3C COUNCIL",ZEUS_PROTOCOL:"ZEUS PROTOCOL",POSEIDON:"POSEIDON",HADES:"HADES"})[sendTarget] || "B3C COUNCIL"} → {activeUser || "ALL"}
                     </button>
-                  ))}
-                </div>
-              )}
-              <button
-                className={`user-context-btn ${activeUser ? "user-active" : "user-none"}`}
-                onClick={() => setActiveUser(u => u === null ? "CARSON" : u === "CARSON" ? "TYLER" : null)}
-                title="Active user — click to cycle"
-              >
-                {activeUser ? `· ${activeUser}` : "· ALL USERS"}
-              </button>
-              {!gaiaMode && (
+                    {routeOpen && (
+                      <div className="route-dropdown">
+                        {[
+                          { id: "B3C_COUNCIL",   label: "B3C COUNCIL" },
+                          { id: "ZEUS_PROTOCOL", label: "ZEUS PROTOCOL" },
+                          { id: "POSEIDON",      label: "POSEIDON" },
+                          { id: "HADES",         label: "HADES" },
+                        ].map(t => (
+                          <button
+                            key={t.id}
+                            className={`route-option ${sendTarget === t.id ? "active" : ""}`}
+                            onClick={() => { setSendTarget(t.id); setRouteOpen(false); }}
+                          >
+                            {t.label}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <button
-                  className={`priority-btn ${sendPriority ? "active" : ""}`}
-                  onClick={() => setSendPriority(p => !p)}
-                  title="Priority — Zeus evaluates whether this mission should jump the queue"
-                >⚡ PRIORITY</button>
-              )}
-              <button
-                className={`send-btn${gaiaMode ? " gaia-send-btn" : ""} ${sending ? "sending" : ""}`}
-                onClick={gaiaMode ? handleGaiaSend : handleSend}
-                disabled={sending || !sendText.trim()}
-              >
-                {sending ? "SENDING..." : (gaiaMode && gaiaViewMode === "council") ? "OPEN CHANNEL" : gaiaMode ? "SEND TO GAIA" : "SEND"}
-              </button>
+                  className={`user-context-btn ${activeUser ? "user-active" : "user-none"}`}
+                  onClick={() => setActiveUser(u => u === null ? "CARSON" : u === "CARSON" ? "TYLER" : null)}
+                  title="Active user — click to cycle"
+                >
+                  {activeUser ? `· ${activeUser}` : "· ALL USERS"}
+                </button>
+                {!gaiaMode && (
+                  <button
+                    className={`priority-btn ${sendPriority ? "active" : ""}`}
+                    onClick={() => setSendPriority(p => !p)}
+                    title="Priority — Zeus evaluates whether this mission should jump the queue"
+                  >⚡ PRIORITY</button>
+                )}
+                <button
+                  className={`send-arrow${gaiaMode ? " gaia-send-btn" : ""} ${sending ? "sending" : ""}`}
+                  onClick={gaiaMode ? handleGaiaSend : handleSend}
+                  disabled={sending || !sendText.trim()}
+                  title={sending ? "Sending..." : "Send"}
+                >
+                  {sending ? "·" : "↑"}
+                </button>
+              </div>
             </div>
           </div>
         </div>

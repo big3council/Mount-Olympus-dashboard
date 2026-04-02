@@ -48,14 +48,14 @@ const styles = `
     transition: width 0.8s ease;
   }
   .olympus-progress-label {
-    font-size: 9px; color: #4a5580;
+    font-size: 11px; color: #4a5580;
     letter-spacing: 0.08em; text-align: center;
   }
 
   /* Needs-you badge */
   .olympus-needs-you {
     position: absolute; top: 8px; right: 8px;
-    font-size: 8px; color: #e8b84b;
+    font-size: 10px; color: #e8b84b;
     border: 1px solid #c8960a; border-radius: 3px;
     padding: 2px 6px; letter-spacing: 0.12em;
     text-transform: uppercase;
@@ -89,11 +89,11 @@ const styles = `
   }
   .olympus-gaia-label {
     font-family: "Cinzel", serif;
-    font-size: 8px; color: #2a3560;
+    font-size: 10px; color: #2a3560;
     letter-spacing: 0.1em;
   }
   .olympus-gaia-retro {
-    font-size: 11px; color: #3a4570;
+    font-size: 13px; color: #3a4570;
     font-style: italic; max-width: 60%;
     overflow: hidden; text-overflow: ellipsis;
     white-space: nowrap;
@@ -159,7 +159,7 @@ const styles = `
   }
   .olympus-agent-name {
     font-family: "Cinzel", serif;
-    font-size: 9px; letter-spacing: 0.15em;
+    font-size: 11px; letter-spacing: 0.15em;
     text-transform: uppercase;
   }
   .olympus-agent-name[data-agent="zeus"]     { color: #e8b84b; }
@@ -167,7 +167,7 @@ const styles = `
   .olympus-agent-name[data-agent="hades"]    { color: #b04adc; }
   .olympus-agent-name[data-agent="gaia"]     { color: #78d87a; }
   .olympus-agent-state {
-    font-size: 8px; color: #4a5580;
+    font-size: 10px; color: #4a5580;
     letter-spacing: 0.08em; text-transform: uppercase;
     margin-left: auto;
   }
@@ -415,10 +415,10 @@ export default function OlympusView() {
         {projects.length === 0 ? (
           <div className="olympus-empty">
             <div style={{ fontSize: 32, opacity: 0.3 }}>🏛</div>
-            <div style={{ fontSize: 11, letterSpacing: "0.2em", textTransform: "uppercase" }}>
+            <div style={{ fontSize: 13, letterSpacing: "0.2em", textTransform: "uppercase" }}>
               OLYMPUS
             </div>
-            <div style={{ fontSize: 10, color: "#1a2040", letterSpacing: "0.1em" }}>
+            <div style={{ fontSize: 12, color: "#1a2040", letterSpacing: "0.1em" }}>
               Loading projects...
             </div>
           </div>

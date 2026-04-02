@@ -116,6 +116,57 @@ async function callAgent(name, url, token, message) {
   return text;
 }
 
+
+// ── Streaming HTTP agent caller ───────────────────────────────────────────────
+
+export async function callAgentStream(name, url, token, message, onChunk) {
+  if (!token) throw new Error(name + ' token not set');
+
+  const res = await fetch(url, {
+    method:  'POST',
+    headers: {
+      'Content-Type':           'application/json',
+      'Authorization':          'Bearer ' + token,
+      'x-openclaw-scopes':       'operator.write',
+      'x-openclaw-session-key': sessionKey(name),
+    },
+    body: JSON.stringify({ model: 'openclaw', messages: [{ role: 'user', content: message }], stream: true }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(name + ' HTTP ' + res.status + (body ? ': ' + body.slice(0, 120) : ''));
+  }
+
+  let full = '';
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split('\n');
+    buffer = lines.pop();
+    for (const line of lines) {
+      if (!line.startsWith('data: ')) continue;
+      const payload = line.slice(6).trim();
+      if (payload === '[DONE]') continue;
+      try {
+        const parsed = JSON.parse(payload);
+        const delta = parsed.choices?.[0]?.delta?.content;
+        if (delta) {
+          full += delta;
+          onChunk(delta, full);
+        }
+      } catch {}
+    }
+  }
+  if (!full) throw new Error(name + ' returned empty streaming response');
+  return full;
+}
+
 // ── Quorum agent caller ───────────────────────────────────────────────────────
 
 /**
