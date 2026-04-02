@@ -4,8 +4,7 @@
  */
 import { useEffect, useRef } from "react";
 
-// ── Sacred Geometry Background Canvas ────────────────────────────────────────
-// 5 layers: particles, Metatron's Cube, orbital rings, edge geometry, radial lines
+// ── Sacred Geometry Background — Wandering Metatron's Cube ───────────────────
 function SacredGeometryCanvas() {
   const canvasRef = useRef(null);
 
@@ -13,130 +12,119 @@ function SacredGeometryCanvas() {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
-    let W, H, cx, cy;
+    let W, H;
 
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       W = canvas.offsetWidth; H = canvas.offsetHeight;
-      cx = W / 2; cy = H / 2;
       canvas.width = W * dpr; canvas.height = H * dpr;
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     };
     resize();
     window.addEventListener("resize", resize);
 
-    // ── LAYER 1: Particle drift ──────────────────────────────────────────
-    const particles = Array.from({ length: 150 }, () => ({
+    // ── Particle drift (subtle cosmic dust) ──────────────────────────────
+    const particles = Array.from({ length: 120 }, () => ({
       x: Math.random(), y: Math.random(),
-      r: 0.2 + Math.random() * 0.6,
-      baseA: 0.04 + Math.random() * 0.11,
+      r: 0.2 + Math.random() * 0.5,
+      baseA: 0.03 + Math.random() * 0.08,
       ph: Math.random() * Math.PI * 2,
-      sp: 0.0003 + Math.random() * 0.0008,
-      vy: -(0.003 + Math.random() * 0.008), // upward drift
-      vx: (Math.random() - 0.5) * 0.002,     // lateral wobble
+      sp: 0.0003 + Math.random() * 0.0006,
+      vy: -(0.002 + Math.random() * 0.006),
+      vx: (Math.random() - 0.5) * 0.001,
     }));
 
-    // ── LAYER 2: Metatron's Cube geometry ────────────────────────────────
-    // 13 circles: 1 center + 6 inner ring + 6 outer ring
-    const R_INNER = 0.12; // as fraction of min(W,H)
-    const R_OUTER = 0.24;
-    const CIRCLE_R = 0.035;
+    // ── Metatron's Cube geometry ─────────────────────────────────────────
+    // ── Complex Metatron's Cube — 4 rings + Flower of Life + full connections ──
+    const RINGS = [
+      { r: 0,    count: 1, label: "center" },
+      { r: 0.11, count: 6, label: "inner" },
+      { r: 0.22, count: 6, label: "mid" },
+      { r: 0.33, count: 6, label: "outer" },
+      { r: 0.42, count: 12, label: "crown" },
+    ];
 
-    function getMetatronCircles(outerRot, innerRot) {
-      const circles = [{ x: 0, y: 0, ring: "center" }]; // center
-      for (let i = 0; i < 6; i++) {
-        const a = innerRot + (i * Math.PI * 2) / 6;
-        circles.push({ x: Math.cos(a) * R_INNER, y: Math.sin(a) * R_INNER, ring: "inner" });
-      }
-      for (let i = 0; i < 6; i++) {
-        const a = outerRot + (i * Math.PI * 2) / 6;
-        circles.push({ x: Math.cos(a) * R_OUTER, y: Math.sin(a) * R_OUTER, ring: "outer" });
+    function getCircles(ts) {
+      const circles = [];
+      // Ring rotations — each ring rotates at its own speed and direction
+      const rots = [
+        0,                             // center: static
+        -(ts / 90000) * Math.PI * 2,   // inner: counter-clockwise 90s
+        (ts / 120000) * Math.PI * 2,   // mid: clockwise 120s
+        -(ts / 150000) * Math.PI * 2,  // outer: counter 150s
+        (ts / 200000) * Math.PI * 2,   // crown: very slow clockwise 200s
+      ];
+      for (let ri = 0; ri < RINGS.length; ri++) {
+        const ring = RINGS[ri];
+        for (let i = 0; i < ring.count; i++) {
+          const a = rots[ri] + (i * Math.PI * 2) / ring.count;
+          circles.push({
+            x: ring.r === 0 ? 0 : Math.cos(a) * ring.r,
+            y: ring.r === 0 ? 0 : Math.sin(a) * ring.r,
+            ring: ri,
+          });
+        }
       }
       return circles;
     }
 
-    // Pre-compute all 78 connection lines (every pair of 13 circles)
-    const metLines = [];
-    for (let i = 0; i < 13; i++) {
-      for (let j = i + 1; j < 13; j++) {
-        metLines.push([i, j]);
+    // Flower of Life circle radii per ring
+    const FOL_RADII = [0.11, 0.08, 0.065, 0.05, 0.03];
+
+    // Pre-compute connection patterns
+    function getMetLines(circles) {
+      const lines = [];
+      const n = circles.length;
+      // Connect within each ring (adjacent)
+      let idx = 0;
+      for (const ring of RINGS) {
+        if (ring.count > 1) {
+          for (let i = 0; i < ring.count; i++) {
+            lines.push([idx + i, idx + ((i + 1) % ring.count)]);
+          }
+        }
+        idx += ring.count;
       }
+      // Connect center to inner ring
+      for (let i = 1; i <= 6; i++) lines.push([0, i]);
+      // Connect inner to mid (corresponding + skip-one for star pattern)
+      for (let i = 0; i < 6; i++) {
+        lines.push([1 + i, 7 + i]);
+        lines.push([1 + i, 7 + ((i + 1) % 6)]);
+      }
+      // Connect mid to outer
+      for (let i = 0; i < 6; i++) {
+        lines.push([7 + i, 13 + i]);
+        lines.push([7 + i, 13 + ((i + 1) % 6)]);
+      }
+      // Connect outer to crown (each outer vertex connects to 2 nearest crown)
+      for (let i = 0; i < 6; i++) {
+        lines.push([13 + i, 19 + (i * 2)]);
+        lines.push([13 + i, 19 + (i * 2 + 1)]);
+      }
+      // Star of David: connect alternating inner vertices through center
+      for (let i = 0; i < 3; i++) {
+        lines.push([1 + i, 1 + i + 3]);
+      }
+      return lines;
     }
 
-    // ── LAYER 3: Orbital rings ───────────────────────────────────────────
-    const orbits = [
-      { r: 0.16, color: "232,184,75",  dots: 3, speed: 1 / 15000, phase: 0 },       // gold - Zeus
-      { r: 0.28, color: "74,184,232",  dots: 2, speed: 1 / 18000, phase: 0.3 },     // blue - Poseidon
-      { r: 0.38, color: "176,74,220",  dots: 2, speed: 1 / 22000, phase: 0.6 },     // purple - Hades
+    // ── Wandering position state ─────────────────────────────────────────
+    // Cube spawns at a corner, holds while rotating, fades out, moves to next
+    const CORNERS = [
+      { x: 0.18, y: 0.78 },  // bottom-left
+      { x: 0.82, y: 0.78 },  // bottom-right
+      { x: 0.82, y: 0.18 },  // top-right
+      { x: 0.18, y: 0.18 },  // top-left
     ];
+    let cornerIdx = 0;
+    let cubeX = CORNERS[0].x, cubeY = CORNERS[0].y;
+    let targetX = cubeX, targetY = cubeY;
+    let cubePhase = 0; // 0=fade-in, 1=hold, 2=fade-out, 3=travel
+    let phaseElapsed = 0;
+    const PHASE_DUR = [3000, 18000, 3000, 4000]; // fade-in, hold, fade-out, travel
 
-    // ── LAYER 4: Edge geometry shapes ────────────────────────────────────
-    // Each shape: position (normalized), type, rotation speed, size
-    const edgeShapes = [
-      // Corners
-      { x: 0.08, y: 0.08, type: "hexagon",  sz: 0.06, rotSpeed: 1/45000, innerScale: 0.6 },
-      { x: 0.92, y: 0.08, type: "triangle", sz: 0.05, rotSpeed: 1/55000, innerScale: 0.6 },
-      { x: 0.08, y: 0.92, type: "diamond",  sz: 0.05, rotSpeed: 1/65000, innerScale: 0.6 },
-      { x: 0.92, y: 0.92, type: "pentagon", sz: 0.05, rotSpeed: 1/75000, innerScale: 0.6 },
-      // Top edge
-      { x: 0.33, y: 0.06, type: "star6",    sz: 0.035, rotSpeed: 1/60000, innerScale: 0.65 },
-      { x: 0.67, y: 0.06, type: "star6",    sz: 0.035, rotSpeed: 1/70000, innerScale: 0.65 },
-      // Bottom edge
-      { x: 0.33, y: 0.94, type: "octagon",  sz: 0.035, rotSpeed: 1/80000, innerScale: 0.65 },
-      { x: 0.67, y: 0.94, type: "octagon",  sz: 0.035, rotSpeed: 1/90000, innerScale: 0.65 },
-      // Left edge
-      { x: 0.05, y: 0.50, type: "vesica",   sz: 0.045, rotSpeed: 1/50000, innerScale: 0.7 },
-      // Right edge
-      { x: 0.95, y: 0.50, type: "triCircle", sz: 0.04, rotSpeed: 1/55000, innerScale: 0.7 },
-    ];
-
-    function drawPolygon(px, py, r, sides, rot) {
-      ctx.beginPath();
-      for (let i = 0; i <= sides; i++) {
-        const a = rot + (i * Math.PI * 2) / sides - Math.PI / 2;
-        const x = px + Math.cos(a) * r;
-        const y = py + Math.sin(a) * r;
-        i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
-      }
-      ctx.closePath();
-    }
-
-    function drawShape(shape, px, py, r, rot, alpha) {
-      ctx.strokeStyle = `rgba(200, 175, 110, ${alpha})`;
-      ctx.lineWidth = 0.5;
-
-      switch (shape.type) {
-        case "hexagon": drawPolygon(px, py, r, 6, rot); ctx.stroke(); break;
-        case "triangle": drawPolygon(px, py, r, 3, rot); ctx.stroke(); break;
-        case "diamond": drawPolygon(px, py, r, 4, rot); ctx.stroke(); break;
-        case "pentagon": drawPolygon(px, py, r, 5, rot); ctx.stroke(); break;
-        case "octagon": drawPolygon(px, py, r, 8, rot); ctx.stroke(); break;
-        case "star6": {
-          // Star of David: two overlapping triangles
-          drawPolygon(px, py, r, 3, rot); ctx.stroke();
-          drawPolygon(px, py, r, 3, rot + Math.PI); ctx.stroke();
-          break;
-        }
-        case "vesica": {
-          // Two overlapping circles
-          const offset = r * 0.5;
-          ctx.beginPath(); ctx.arc(px - offset, py, r * 0.7, 0, Math.PI * 2); ctx.stroke();
-          ctx.beginPath(); ctx.arc(px + offset, py, r * 0.7, 0, Math.PI * 2); ctx.stroke();
-          break;
-        }
-        case "triCircle": {
-          // Triangle with inscribed circle
-          drawPolygon(px, py, r, 3, rot); ctx.stroke();
-          ctx.beginPath(); ctx.arc(px, py, r * 0.45, 0, Math.PI * 2); ctx.stroke();
-          break;
-        }
-      }
-    }
-
-    // ── LAYER 5: Radial ambient lines ────────────────────────────────────
-    const radialCount = 8;
-
-    // ── Animation loop ───────────────────────────────────────────────────
+    // ── Draw loop ────────────────────────────────────────────────────────
     let lt = 0, raf;
     const TWO_PI = Math.PI * 2;
 
@@ -144,26 +132,47 @@ function SacredGeometryCanvas() {
       if (!lt) lt = ts;
       const dt = ts - lt;
       lt = ts;
+      phaseElapsed += dt;
       W = canvas.offsetWidth; H = canvas.offsetHeight;
-      cx = W / 2; cy = H / 2;
-      const S = Math.min(W, H);
       ctx.clearRect(0, 0, W, H);
 
-      // Center fade mask: geometry dims in center third
-      const centerFade = (px, py) => {
-        const dx = (px - cx) / (W * 0.33);
-        const dy = (py - cy) / (H * 0.33);
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        return dist < 1 ? 0.25 + 0.75 * dist : 1;
-      };
+      const S = Math.min(W, H);
 
-      // ── L1: Particles ─────────────────────────────────────────────────
+      // ── Phase machine ──────────────────────────────────────────────────
+      if (phaseElapsed >= PHASE_DUR[cubePhase]) {
+        phaseElapsed = 0;
+        cubePhase = (cubePhase + 1) % 4;
+        if (cubePhase === 3) {
+          // Pick next corner
+          cornerIdx = (cornerIdx + 1) % CORNERS.length;
+          targetX = CORNERS[cornerIdx].x;
+          targetY = CORNERS[cornerIdx].y;
+        }
+      }
+
+      // Cube opacity based on phase
+      let cubeAlpha;
+      const t = Math.min(1, phaseElapsed / PHASE_DUR[cubePhase]);
+      if (cubePhase === 0) cubeAlpha = t;                    // fade in
+      else if (cubePhase === 1) cubeAlpha = 1;               // full
+      else if (cubePhase === 2) cubeAlpha = 1 - t;           // fade out
+      else cubeAlpha = 0;                                     // traveling (invisible)
+
+      // Smooth travel during phase 3
+      if (cubePhase === 3) {
+        const ease = t < 0.5 ? 2*t*t : 1 - Math.pow(-2*t+2, 2) / 2;
+        cubeX = cubeX + (targetX - cubeX) * ease * 0.08;
+        cubeY = cubeY + (targetY - cubeY) * ease * 0.08;
+      }
+      if (cubePhase === 0 && phaseElapsed < 100) {
+        cubeX = targetX; cubeY = targetY; // snap to target on arrival
+      }
+
+      // ── L1: Particles ──────────────────────────────────────────────────
       for (const p of particles) {
         p.y += p.vy;
-        p.x += p.vx + Math.sin(ts * 0.0002 + p.ph) * 0.0002;
+        p.x += p.vx + Math.sin(ts * 0.00015 + p.ph) * 0.00015;
         if (p.y < -0.02) { p.y = 1.02; p.x = Math.random(); }
-        if (p.x < -0.02) p.x = 1.02;
-        if (p.x > 1.02) p.x = -0.02;
         p.ph += p.sp * dt;
         const a = p.baseA * (0.5 + 0.5 * Math.sin(p.ph));
         ctx.beginPath();
@@ -172,109 +181,134 @@ function SacredGeometryCanvas() {
         ctx.fill();
       }
 
-      // ── L5: Radial lines (drawn early so they're behind everything) ───
-      for (let i = 0; i < radialCount; i++) {
-        const a = (i * TWO_PI) / radialCount;
-        const ex = cx + Math.cos(a) * S * 0.6;
-        const ey = cy + Math.sin(a) * S * 0.6;
+      // ── Metatron's Cube (only when visible) ────────────────────────────
+      if (cubeAlpha > 0.01) {
+        const pcx = cubeX * W;
+        const pcy = cubeY * H;
+        const cubeSize = S * 0.32; // compact size
+
+        const breathe = 0.5 + 0.5 * Math.sin(ts / 12500);
+        const breathe2 = 0.5 + 0.5 * Math.sin(ts / 8000 + 1.5);
+
+        const circles = getCircles(ts);
+        const lines = getMetLines(circles);
+
+        // ── Outer aura glow ──────────────────────────────────────────────
+        const auraR = cubeSize * 0.5;
+        const aura = ctx.createRadialGradient(pcx, pcy, cubeSize * 0.1, pcx, pcy, auraR);
+        aura.addColorStop(0, `rgba(232, 184, 75, ${0.025 * cubeAlpha})`);
+        aura.addColorStop(0.6, `rgba(180, 140, 60, ${0.012 * cubeAlpha})`);
+        aura.addColorStop(1, "rgba(232, 184, 75, 0)");
         ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(ex, ey);
-        ctx.strokeStyle = "rgba(200, 175, 110, 0.035)";
-        ctx.lineWidth = 0.5;
-        ctx.stroke();
-      }
+        ctx.arc(pcx, pcy, auraR, 0, TWO_PI);
+        ctx.fillStyle = aura;
+        ctx.fill();
 
-      // ── L2: Metatron's Cube ────────────────────────────────────────────
-      const outerRot = (ts / 120000) * TWO_PI;         // 120s revolution
-      const innerRot = -(ts / 90000) * TWO_PI;         // 90s counter
-      const breathe = 0.5 + 0.5 * Math.sin(ts / 12500); // 25s full cycle (sin period = 2*12500)
-      const baseLineAlpha = 0.05 + breathe * 0.07;     // 3-9%
-
-      const circles = getMetatronCircles(outerRot, innerRot);
-
-      // Draw connecting lines
-      ctx.lineWidth = 0.5;
-      for (const [i, j] of metLines) {
-        const c1 = circles[i], c2 = circles[j];
-        const px1 = cx + c1.x * S, py1 = cy + c1.y * S;
-        const px2 = cx + c2.x * S, py2 = cy + c2.y * S;
-        const midX = (px1 + px2) / 2, midY = (py1 + py2) / 2;
-        const fade = centerFade(midX, midY);
-        const a = baseLineAlpha * fade;
-        ctx.beginPath();
-        ctx.moveTo(px1, py1);
-        ctx.lineTo(px2, py2);
-        ctx.strokeStyle = `rgba(232, 184, 75, ${a})`;
-        ctx.stroke();
-      }
-
-      // Draw circles
-      for (let i = 0; i < circles.length; i++) {
-        const c = circles[i];
-        const px = cx + c.x * S, py = cy + c.y * S;
-        const fade = centerFade(px, py);
-        const pulse = 1 + 0.15 * Math.sin(ts / 4000 + i * 0.5);
-        const r = CIRCLE_R * S * pulse;
-        const a = (0.06 + breathe * 0.05) * fade;
-        ctx.beginPath();
-        ctx.arc(px, py, r, 0, TWO_PI);
-        ctx.strokeStyle = `rgba(232, 184, 75, ${a})`;
-        ctx.lineWidth = 0.4;
-        ctx.stroke();
-      }
-
-      // ── L3: Orbital rings + traveling dots ─────────────────────────────
-      for (const orb of orbits) {
-        const r = orb.r * S;
-        const fade = orb.r < 0.2 ? 0.3 : 1; // inner ring dimmer (center region)
-
-        // Ring ellipse
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, r, r * 0.35, 0.15, 0, TWO_PI);
-        ctx.strokeStyle = `rgba(${orb.color}, ${0.07 * fade})`;
-        ctx.lineWidth = 0.4;
-        ctx.stroke();
-
-        // Traveling dots
-        for (let d = 0; d < orb.dots; d++) {
-          const angle = (ts * orb.speed + orb.phase + (d * TWO_PI) / orb.dots) * TWO_PI;
-          const dx = cx + Math.cos(angle) * r;
-          const dy = cy + Math.sin(angle) * r * 0.35 + Math.cos(0.15) * 0; // ellipse tilt approx
-          const dotR = 2 + Math.sin(ts * 0.002 + d) * 1;
-
-          // Glow halo
-          const grad = ctx.createRadialGradient(dx, dy, 0, dx, dy, dotR * 3);
-          grad.addColorStop(0, `rgba(${orb.color}, ${0.35 * fade})`);
-          grad.addColorStop(1, `rgba(${orb.color}, 0)`);
+        // ── Flower of Life circles (the overlapping circle pattern) ──────
+        for (let i = 0; i < circles.length; i++) {
+          const c = circles[i];
+          const px = pcx + c.x * cubeSize;
+          const py = pcy + c.y * cubeSize;
+          const ringIdx = c.ring;
+          const baseR = FOL_RADII[ringIdx] || 0.03;
+          const pulse = 1 + 0.08 * Math.sin(ts / 5000 + i * 0.4);
+          const r = baseR * cubeSize * pulse;
+          const ringAlpha = [0.07, 0.06, 0.05, 0.04, 0.025][ringIdx] || 0.03;
+          const a = (ringAlpha + breathe * 0.03) * cubeAlpha;
           ctx.beginPath();
-          ctx.arc(dx, dy, dotR * 3, 0, TWO_PI);
-          ctx.fillStyle = grad;
+          ctx.arc(px, py, r, 0, TWO_PI);
+          ctx.strokeStyle = `rgba(232, 184, 75, ${a})`;
+          ctx.lineWidth = 0.35;
+          ctx.stroke();
+        }
+
+        // ── Connecting lines — layered by ring distance ──────────────────
+        const baseLineAlpha = (0.04 + breathe * 0.05) * cubeAlpha;
+        for (const [i, j] of lines) {
+          if (i >= circles.length || j >= circles.length) continue;
+          const c1 = circles[i], c2 = circles[j];
+          const px1 = pcx + c1.x * cubeSize, py1 = pcy + c1.y * cubeSize;
+          const px2 = pcx + c2.x * cubeSize, py2 = pcy + c2.y * cubeSize;
+          // Inner connections brighter, outer dimmer
+          const avgRing = (c1.ring + c2.ring) / 2;
+          const ringFade = 1 - avgRing * 0.15;
+          ctx.beginPath();
+          ctx.moveTo(px1, py1);
+          ctx.lineTo(px2, py2);
+          ctx.strokeStyle = `rgba(232, 184, 75, ${baseLineAlpha * ringFade})`;
+          ctx.lineWidth = avgRing < 1 ? 0.6 : 0.35;
+          ctx.stroke();
+        }
+
+        // ── Vertex dots — small bright points at each circle center ──────
+        for (let i = 0; i < circles.length; i++) {
+          const c = circles[i];
+          const px = pcx + c.x * cubeSize;
+          const py = pcy + c.y * cubeSize;
+          const ringIdx = c.ring;
+          const dotR = [2.5, 2, 1.5, 1.2, 0.8][ringIdx] || 1;
+          const dotA = [0.5, 0.4, 0.3, 0.2, 0.12][ringIdx] || 0.15;
+
+          // Halo
+          const haloR = dotR * 4;
+          const halo = ctx.createRadialGradient(px, py, 0, px, py, haloR);
+          halo.addColorStop(0, `rgba(232, 184, 75, ${dotA * cubeAlpha * breathe2})`);
+          halo.addColorStop(1, "rgba(232, 184, 75, 0)");
+          ctx.beginPath();
+          ctx.arc(px, py, haloR, 0, TWO_PI);
+          ctx.fillStyle = halo;
           ctx.fill();
 
-          // Core
+          // Core dot
           ctx.beginPath();
-          ctx.arc(dx, dy, dotR * 0.6, 0, TWO_PI);
-          ctx.fillStyle = `rgba(${orb.color}, ${0.6 * fade})`;
+          ctx.arc(px, py, dotR, 0, TWO_PI);
+          ctx.fillStyle = `rgba(255, 230, 160, ${dotA * cubeAlpha})`;
           ctx.fill();
         }
-      }
 
-      // ── L4: Edge geometry ──────────────────────────────────────────────
-      for (const shape of edgeShapes) {
-        const px = shape.x * W;
-        const py = shape.y * H;
-        const r = shape.sz * S;
-        const rot = ts * shape.rotSpeed * TWO_PI;
-        const innerRot2 = -rot * 0.65; // counter-rotate at 65% speed
-        const alpha = 0.05 + 0.04 * Math.sin(ts * 0.0003 + shape.x * 10);
+        // ── Spinning inner triangles (Star of David) ─────────────────────
+        const triRot1 = (ts / 25000) * TWO_PI;
+        const triRot2 = -(ts / 25000) * TWO_PI;
+        const triR = cubeSize * 0.18;
+        const triAlpha = (0.04 + breathe * 0.03) * cubeAlpha;
+        for (let t = 0; t < 2; t++) {
+          const rot = t === 0 ? triRot1 : triRot2;
+          ctx.beginPath();
+          for (let i = 0; i <= 3; i++) {
+            const a = rot + (i * TWO_PI) / 3 - Math.PI / 2;
+            const tx = pcx + Math.cos(a) * triR;
+            const ty = pcy + Math.sin(a) * triR;
+            i === 0 ? ctx.moveTo(tx, ty) : ctx.lineTo(tx, ty);
+          }
+          ctx.closePath();
+          ctx.strokeStyle = `rgba(232, 184, 75, ${triAlpha})`;
+          ctx.lineWidth = 0.5;
+          ctx.stroke();
+        }
 
-        // Outer shape
-        ctx.save();
-        drawShape(shape, px, py, r, rot, alpha);
-        // Inner counter-rotating shape
-        drawShape(shape, px, py, r * shape.innerScale, innerRot2, alpha * 0.7);
-        ctx.restore();
+        // ── Outermost containment circle ─────────────────────────────────
+        const outerCircleR = cubeSize * 0.44;
+        const outerRot = (ts / 60000) * TWO_PI;
+        ctx.beginPath();
+        ctx.arc(pcx, pcy, outerCircleR, 0, TWO_PI);
+        ctx.strokeStyle = `rgba(232, 184, 75, ${0.025 * cubeAlpha})`;
+        ctx.lineWidth = 0.3;
+        ctx.stroke();
+
+        // Tick marks on outer circle (12 hour positions)
+        for (let i = 0; i < 12; i++) {
+          const a = outerRot + (i * TWO_PI) / 12;
+          const ix = pcx + Math.cos(a) * (outerCircleR - 3);
+          const iy = pcy + Math.sin(a) * (outerCircleR - 3);
+          const ox = pcx + Math.cos(a) * (outerCircleR + 3);
+          const oy = pcy + Math.sin(a) * (outerCircleR + 3);
+          ctx.beginPath();
+          ctx.moveTo(ix, iy);
+          ctx.lineTo(ox, oy);
+          ctx.strokeStyle = `rgba(232, 184, 75, ${0.04 * cubeAlpha})`;
+          ctx.lineWidth = 0.4;
+          ctx.stroke();
+        }
       }
 
       raf = requestAnimationFrame(draw);
@@ -291,7 +325,6 @@ function SacredGeometryCanvas() {
     }} />
   );
 }
-
 
 // ── Greek Throne SVG ─────────────────────────────────────────────────────────
 function GreekThrone({ color, size, glow }) {
