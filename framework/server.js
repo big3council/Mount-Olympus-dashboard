@@ -15,7 +15,7 @@ import express from 'express';
 import { WebSocket } from 'ws';
 import { initWS, broadcast } from './olympus-ws.js';
 import { enqueue, cancelMission, getQueue } from './queue.js';
-import { initTelegram } from './telegram.js';
+import { initTelegram, shutdownTelegram } from './telegram.js';
 import { initGaia, runDirectGaia, gaiaInitiateCouncil, observeMission, executeSSHControl } from './gaia.js';
 import { initPeerLayer, getPeerStatus, getPresence } from "./council-peer.js";
 import dashboardRoutes from "./dashboard-routes.js";
@@ -506,3 +506,13 @@ server.listen(PORT, () => {
   initGaia();
   initPeerLayer();
 });
+
+// ── Graceful shutdown ─────────────────────────────────────────────────────────
+async function gracefulShutdown(signal) {
+  console.log(`[Olympus] ${signal} received — shutting down gracefully`);
+  await shutdownTelegram();
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 5000);
+}
+process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+process.on("SIGINT",  () => gracefulShutdown("SIGINT"));

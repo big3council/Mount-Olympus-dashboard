@@ -333,3 +333,16 @@ export function initTelegram() {
     console.log('[Telegram] No bot tokens configured — Telegram integration disabled');
   }
 }
+
+// ── Graceful shutdown — stop polling before process exits ─────────────────────
+export function shutdownTelegram() {
+  const promises = [];
+  for (const [name, bot] of activeBots) {
+    if (bot.isPolling()) {
+      console.log(`[Telegram] Stopping ${name} polling...`);
+      promises.push(bot.stopPolling().catch(() => {}));
+    }
+  }
+  activeBots.clear();
+  return Promise.all(promises);
+}
