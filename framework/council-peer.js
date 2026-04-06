@@ -1,7 +1,7 @@
 /**
  * council-peer.js — B3C WebSocket Peer-to-Peer Messaging Layer + AI Bridge
  *
- * Runs on all 4 nodes over Thunderbolt Bridge (port 18800).
+ * Runs on all 4 nodes over LAN (port 18800). Migrated from TB 2026-04-06.
  * Every node runs a WS server AND connects as client to all peers.
  * Any node can initiate messages to any other node at any time.
  *
@@ -34,26 +34,17 @@ function detectNodeId() {
 
 const NODE_ID = detectNodeId();
 
-// ── TB Bridge IP map ──────────────────────────────────────────────────────────
+// ── LAN IP map (migrated from TB 2026-04-06) ──────────────────────────────────────────────────────────
 const PEERS = {
-  zeus:     { ip: '10.0.0.1', port: 18800 },
-  poseidon: { ip: '10.0.0.2', port: 18800 },
-  hades:    { ip: '10.0.0.3', port: 18800 },
-  gaia:     { ip: '10.0.3.2', port: 18800 },  // Gaia on separate TB link
+  zeus:     { ip: '192.168.1.11', port: 18800 },
+  poseidon: { ip: '192.168.1.12', port: 18800 },
+  hades:    { ip: '192.168.1.13', port: 18800 },
+  gaia:     { ip: '192.168.1.14', port: 18800 },
 };
 
 const PEER_PORT = 18800;
 const MY_IP = PEERS[NODE_ID].ip;
 
-// ── Tailscale fallback IPs (used when Thunderbolt is unreachable) ─────────────
-const TAILSCALE_FALLBACK = {
-  zeus:     '100.78.126.27',
-  poseidon: '100.114.203.41',
-  hades:    '100.68.217.82',
-  gaia:     '100.74.201.75',
-};
-const TB_FAIL_THRESHOLD = 3;  // switch to Tailscale after N consecutive TB failures
-const tbFailCounts = {};      // { peerId: consecutiveFailures }
 
 // ── State ─────────────────────────────────────────────────────────────────────
 const peerConnections = {};  // { nodeId: WebSocket } — outbound client connections
@@ -515,6 +506,13 @@ function connectToPeer(peerId) {
   if (peerId === NODE_ID) return;
 
   const peer = PEERS[peerId];
+
+  // Clean up any stale connection before attempting new one
+  const existing = peerConnections[peerId];
+  if (existing && existing.readyState !== WebSocket.OPEN) {
+    try { existing.terminate(); } catch(e) {}
+    delete peerConnections[peerId];
+  }
   if (peerConnections[peerId]?.readyState === WebSocket.OPEN) return;
 
   // If a healthy inbound connection exists from this peer, skip the outbound
@@ -528,12 +526,8 @@ function connectToPeer(peerId) {
     return;
   }
 
-  // Determine IP: use Tailscale fallback if TB has failed repeatedly
-  if (!tbFailCounts[peerId]) tbFailCounts[peerId] = 0;
-  const useTailscale = tbFailCounts[peerId] >= TB_FAIL_THRESHOLD && TAILSCALE_FALLBACK[peerId];
-  const targetIp = useTailscale ? TAILSCALE_FALLBACK[peerId] : peer.ip;
-  const url = `ws://${targetIp}:${peer.port}`;
-  const via = useTailscale ? 'tailscale' : 'thunderbolt';
+  const url = `ws://${peer.ip}:${peer.port}`;
+  const via = 'lan';
 
   peerStatus[peerId] = 'connecting';
   log(`Connecting to ${peerId} at ${url} (${via})`);
@@ -546,8 +540,6 @@ function connectToPeer(peerId) {
     peerConnections[peerId] = ws;
     peerStatus[peerId] = 'connected';
     retryDelay = 2000;
-    // Reset fail count on successful TB connection so we try TB again next time
-    if (!useTailscale) tbFailCounts[peerId] = 0;
 
     // Announce ourselves
     ws.send(buildMessage(peerId, 'ack', `${NODE_ID} peer connection established`));
@@ -566,20 +558,12 @@ function connectToPeer(peerId) {
     log(`Disconnected from ${peerId}`);
     peerStatus[peerId] = 'disconnected';
     delete peerConnections[peerId];
-    tbFailCounts[peerId] = (tbFailCounts[peerId] || 0) + 1;
     // Reconnect with backoff
     setTimeout(() => connectToPeer(peerId), Math.min(retryDelay, 30000));
     retryDelay = Math.min(retryDelay * 1.5, 30000);
   });
 
   ws.on('error', (e) => {
-    // Track TB failures for fallback logic
-    if (e.message.includes('EHOSTDOWN') || e.message.includes('EHOSTUNREACH') || e.message.includes('ETIMEDOUT')) {
-      tbFailCounts[peerId] = (tbFailCounts[peerId] || 0) + 1;
-      if (tbFailCounts[peerId] === TB_FAIL_THRESHOLD) {
-        log(`⚠ ${peerId} unreachable via TB after ${TB_FAIL_THRESHOLD} attempts — switching to Tailscale fallback`);
-      }
-    }
     // Suppress connection refused during startup — close handler will retry
     if (!e.message.includes('ECONNREFUSED')) {
       err(`Client error (${peerId}): ${e.message}`);

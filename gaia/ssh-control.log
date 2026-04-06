@@ -49,3 +49,10 @@ gaia@100.78.126.27: Permission denied (publickey,password,keyboard-interactive).
   status:  OK
   result:  hades-ok
 
+[2026-04-02T20:24:58.417Z]
+  node:    poseidon (10.0.1.2)
+  command: pm2 list 2>/dev/null | head -8; openclaw status 2>&1 | head -5
+  reason:  Diagnostics: model backend unresponsive since 9:49 AM
+  status:  FAILED
+  result:  ERROR: ssh-control service unreachable — fetch failed
+

@@ -345,7 +345,7 @@ app.get('/proxy/health', async (req, res) => {
 });
 
 // ── Gaia OpenClaw poller (with device auth) ───────────────────────────────────
-const GAIA_WS_URL   = 'ws://10.0.3.2:18789';
+const GAIA_WS_URL   = 'ws://192.168.1.14:18789';
 const GAIA_TOKEN    = process.env.GAIA_OPENCLAW_TOKEN;
 const POLL_INTERVAL = 30_000;
 

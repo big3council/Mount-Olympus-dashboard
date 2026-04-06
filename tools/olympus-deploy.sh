@@ -29,10 +29,10 @@ log() { echo "[deploy:$SELF] $(date '+%H:%M:%S') $1"; }
 
 get_ip() {
   case "$1" in
-    zeus)        echo "10.0.1.1" ;;
-    poseidon)    echo "10.0.1.2" ;;
-    hades)       echo "10.0.2.2" ;;
-    gaia)        echo "10.0.3.2" ;;
+    zeus)        echo "192.168.1.11" ;;
+    poseidon)    echo "192.168.1.12" ;;
+    hades)       echo "192.168.1.13" ;;
+    gaia)        echo "192.168.1.14" ;;
     hermes)      echo "192.168.1.102" ;;
     athena)      echo "192.168.1.189" ;;
     apollo)      echo "192.168.1.170" ;;

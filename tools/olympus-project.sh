@@ -653,7 +653,7 @@ payload = {
     "timestamp": now,
 }
 
-peers = {"zeus": "10.0.1.1", "poseidon": "10.0.1.2", "hades": "10.0.2.2", "gaia": "10.0.3.2"}
+peers = {"zeus": "192.168.1.11", "poseidon": "192.168.1.12", "hades": "192.168.1.13", "gaia": "192.168.1.14"}
 my_ip = peers.get(self_node, "127.0.0.1")
 
 try:

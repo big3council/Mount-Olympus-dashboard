@@ -41,7 +41,7 @@ print(json.dumps({
 
 # Method 1: HTTP POST to Zeus's broadcast endpoint
 # If server.js exposes a POST /broadcast or POST /emit endpoint:
-BROADCAST_URL="http://10.0.1.1:18780/broadcast"
+BROADCAST_URL="http://192.168.1.11:18780/broadcast"
 RESULT=$(/usr/bin/curl -s -o /dev/null -w "%{http_code}" --max-time 5 \
   -X POST "$BROADCAST_URL" \
   -H "Content-Type: application/json" \
@@ -56,7 +56,7 @@ fi
 # Try pushing via a quick Node.js WebSocket connection
 node -e "
 const { WebSocket } = require('ws');
-const ws = new WebSocket('ws://10.0.1.1:18780/live');
+const ws = new WebSocket('ws://192.168.1.11:18780/live');
 ws.on('open', () => {
   ws.send(JSON.stringify($EVENT));
   console.log('[broadcast] ✓ Sent $EVENT_TYPE via WS /live');

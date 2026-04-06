@@ -35,11 +35,11 @@ URL="http://${IP}:18789/v1/chat/completions"
 
 ESCAPED_MSG=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$MESSAGE")
 
-RESPONSE=$(curl -s --max-time 60 -X POST "$URL" \
+RESPONSE=$(curl -s --max-time 180 -X POST "$URL" \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
   -H "x-openclaw-scopes: operator.write" \
-  -H "x-openclaw-session-key: quorum-${AGENT_LOWER}-dispatch" \
+  -H "x-openclaw-session-key: quorum-${AGENT_LOWER}-$(date +%s%3N)" \
   -d "{\"model\":\"openclaw\",\"messages\":[{\"role\":\"user\",\"content\":${ESCAPED_MSG}}],\"stream\":false}" 2>/dev/null)
 
 if [ $? -ne 0 ] || [ -z "$RESPONSE" ]; then
