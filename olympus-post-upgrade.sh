@@ -3,12 +3,20 @@
 # Usage: ./olympus-post-upgrade.sh <nodename|all>
 # Checks cluster integrity after OS or OpenClaw updates.
 # Compatible with macOS bash 3.2 (no associative arrays).
+#
+# SSH quorum model: each council head reaches ONLY its own quorum Sparks.
+#   Zeus     → hermes, hestia, apollo, athena
+#   Poseidon → aphrodite, demeter, iris, prometheus
+#   Hades    → hephaestus, nike, artemis, ares
 
 set -o pipefail
 
 # ── Node lists ────────────────────────────────────────────────────
 MAC_NODES="zeus poseidon hades gaia"
-SPARK_NODES="hermes athena apollo hestia aphrodite iris demeter prometheus hephaestus nike artemis ares"
+ZEUS_QUORUM="hermes hestia apollo athena"
+POSEIDON_QUORUM="aphrodite demeter iris prometheus"
+HADES_QUORUM="hephaestus nike artemis ares"
+SPARK_NODES="$ZEUS_QUORUM $POSEIDON_QUORUM $HADES_QUORUM"
 QUORUM_NODES="zeus poseidon hades"
 
 TIMESTAMP=$(date '+%Y%m%d_%H%M%S')
@@ -55,6 +63,15 @@ get_spark_ip() {
   esac
 }
 
+get_quorum_head() {
+  case $1 in
+    hermes|hestia|apollo|athena)             echo "zeus" ;;
+    aphrodite|demeter|iris|prometheus)        echo "poseidon" ;;
+    hephaestus|nike|artemis|ares)            echo "hades" ;;
+    *)                                        echo "" ;;
+  esac
+}
+
 get_mac_pm2_required() {
   case $1 in
     zeus)      echo "lan-watchdog olympus-dashboard olympus-framework" ;;
@@ -96,10 +113,24 @@ CURRENT_USER=$(whoami)
 run_on() {
   local node=$1; shift
   if [ "$node" = "$CURRENT_USER" ]; then
-    # We are on this node — run locally
     bash -c "$*" 2>/dev/null
   else
     ssh -o ConnectTimeout=5 -o BatchMode=yes "$node" "$@" 2>/dev/null
+  fi
+}
+
+# Run a command on a Spark via its quorum head.
+# If we ARE the quorum head, SSH directly to the Spark.
+# If not, SSH to the quorum head which then SSHes to the Spark.
+run_on_spark() {
+  local spark=$1; shift
+  local head; head=$(get_quorum_head "$spark")
+  if [ "$head" = "$CURRENT_USER" ]; then
+    ssh -o ConnectTimeout=5 -o BatchMode=yes "$spark" "$@" 2>/dev/null
+  else
+    # Double-hop: escape the inner command for the intermediate shell
+    local cmd="$*"
+    ssh -o ConnectTimeout=5 -o BatchMode=yes "$head" "ssh -o ConnectTimeout=5 -o BatchMode=yes $spark $(printf '%q' "$cmd")" 2>/dev/null
   fi
 }
 
@@ -225,22 +256,23 @@ except: print('')
   fi
 }
 
-# ── DGX Spark checks ─────────────────────────────────────────────
+# ── DGX Spark checks (routed via quorum head) ────────────────────
 check_spark() {
   local node=$1
   local expected_ip; expected_ip=$(get_spark_ip "$node")
+  local head; head=$(get_quorum_head "$node")
 
-  header "$node (DGX Spark — expected $expected_ip)"
+  header "$node (DGX Spark — expected $expected_ip, via $head)"
 
-  # Test SSH connectivity first
-  if ! run_on "$node" "echo ok" >/dev/null 2>&1; then
-    log_fail "SSH unreachable — skipping remaining checks"
+  # Test SSH connectivity via quorum head
+  if ! run_on_spark "$node" "echo ok" >/dev/null 2>&1; then
+    log_fail "SSH unreachable via $head — skipping remaining checks"
     return
   fi
 
   # 1. LAN IP correct
   local actual_ip
-  actual_ip=$(run_on "$node" "hostname -I 2>/dev/null | awk '{print \$1}'" || echo "")
+  actual_ip=$(run_on_spark "$node" "hostname -I 2>/dev/null | cut -d\" \" -f1" || echo "")
   if [ "$actual_ip" = "$expected_ip" ]; then
     log_pass "LAN IP correct ($actual_ip)"
   else
@@ -249,7 +281,7 @@ check_spark() {
 
   # 2. OpenClaw healthy (port 18789)
   local oc_status
-  oc_status=$(run_on "$node" "curl -s -o /dev/null -w '%{http_code}' http://localhost:18789/" || echo "000")
+  oc_status=$(run_on_spark "$node" "curl -s -o /dev/null -w '%{http_code}' http://localhost:18789/" || echo "000")
   if [ "$oc_status" = "200" ]; then
     log_pass "OpenClaw healthy (port 18789)"
   else
@@ -258,7 +290,7 @@ check_spark() {
 
   # 3. vLLM healthy (port 8000)
   local vllm_status
-  vllm_status=$(run_on "$node" "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health" || echo "000")
+  vllm_status=$(run_on_spark "$node" "curl -s -o /dev/null -w '%{http_code}' http://localhost:8000/health" || echo "000")
   if [ "$vllm_status" = "200" ]; then
     log_pass "vLLM healthy (port 8000)"
   else
@@ -267,7 +299,7 @@ check_spark() {
 
   # 4. openclaw.json gateway.bind = "lan"
   local bind_val
-  bind_val=$(run_on "$node" "cat ~/.openclaw/openclaw.json 2>/dev/null" | python3 -c "
+  bind_val=$(run_on_spark "$node" "cat ~/.openclaw/openclaw.json 2>/dev/null" | python3 -c "
 import sys,json
 try:
   d=json.load(sys.stdin)
@@ -282,13 +314,13 @@ except: print('parse_error')
 
   # 5. AGENTS.md present and contains "COMMUNICATION TOPOLOGY"
   local agents_check
-  agents_check=$(run_on "$node" "grep -c 'COMMUNICATION TOPOLOGY' ~/.openclaw/workspace/AGENTS.md 2>/dev/null || echo 0" || echo "0")
+  agents_check=$(run_on_spark "$node" "grep -c 'COMMUNICATION TOPOLOGY' ~/.openclaw/workspace/AGENTS.md 2>/dev/null || echo 0" || echo "0")
   agents_check=$(echo "$agents_check" | tr -d '[:space:]')
   if [ "${agents_check:-0}" -ge 1 ] 2>/dev/null; then
     log_pass "AGENTS.md present with COMMUNICATION TOPOLOGY"
   else
     local agents_exists
-    agents_exists=$(run_on "$node" "[ -f ~/.openclaw/workspace/AGENTS.md ] && echo yes || echo no" || echo "no")
+    agents_exists=$(run_on_spark "$node" "[ -f ~/.openclaw/workspace/AGENTS.md ] && echo yes || echo no" || echo "no")
     if [ "$agents_exists" = "yes" ]; then
       log_fail "AGENTS.md present but missing COMMUNICATION TOPOLOGY section"
     else
@@ -298,7 +330,7 @@ except: print('parse_error')
 
   # 6. SOUL.md present
   local soul_ok
-  soul_ok=$(run_on "$node" "[ -f ~/.openclaw/workspace/SOUL.md ] && echo yes || echo no" || echo "no")
+  soul_ok=$(run_on_spark "$node" "[ -f ~/.openclaw/workspace/SOUL.md ] && echo yes || echo no" || echo "no")
   if [ "$soul_ok" = "yes" ]; then
     log_pass "SOUL.md present"
   else
@@ -311,7 +343,8 @@ if [ $# -lt 1 ]; then
   echo "Usage: $0 <nodename|all>"
   echo "  Mac Minis: $MAC_NODES"
   echo "  DGX Sparks: $SPARK_NODES"
-  echo "  all: check everything (Macs first, then Sparks)"
+  echo "  Quorums: Zeus($ZEUS_QUORUM) Poseidon($POSEIDON_QUORUM) Hades($HADES_QUORUM)"
+  echo "  all: check everything (routed through correct quorum heads)"
   exit 1
 fi
 
