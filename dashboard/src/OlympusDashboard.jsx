@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import OlympusView from "./OlympusView";
 import CouncilChamber from "./CouncilChamber";
+import FlywheelView from "./FlywheelView.jsx";
 
 function StarField() {
   const canvasRef = useRef(null);
@@ -4496,9 +4497,9 @@ useEffect(() => {
           </div>
 
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            {/* Three-mode toggle */}
+            {/* Top-mode toggle */}
             <div className="top-toggle">
-              {["council", "olympus", "record"].map(v => (
+              {["council", "olympus", "record", "flywheel"].map(v => (
                 <button
                   key={v}
                   className={`top-toggle-btn ${topView === v ? "active" : ""}`}
@@ -4574,6 +4575,12 @@ useEffect(() => {
         {topView === "record" && (
           <div className="main-canvas" key="record">
             {renderGaiaTree()}
+          </div>
+        )}
+
+        {topView === "flywheel" && (
+          <div className="main-canvas" key="flywheel">
+            <FlywheelView />
           </div>
         )}
 

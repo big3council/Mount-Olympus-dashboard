@@ -20,6 +20,7 @@ import { initGaia, runDirectGaia, gaiaInitiateCouncil, observeMission, executeSS
 import { initPeerLayer, getPeerStatus, getPresence } from "./council-peer.js";
 import dashboardRoutes from "./dashboard-routes.js";
 import logoRoute from "./agent-logo-route.js";
+import flywheelRouter from "./flywheel/flywheel.js";
 
 const PORT = 18780;
 
@@ -493,6 +494,9 @@ function initGaiaPoller() {
 // ── Dashboard flywheel routes ────────────────────────────────────────────────
 app.use(dashboardRoutes);
 app.use(logoRoute);
+
+// ── Flywheel backend (additive — 12 API endpoints, file-backed primitives) ──
+app.use('/flywheel', flywheelRouter);
 
 // ── HTTP + WebSocket server ───────────────────────────────────────────────────
 const server = http.createServer(app);

@@ -35,5 +35,33 @@ module.exports = {
         NODE_ENV: 'production',
       },
     },
+    {
+      name:          'olympus-flywheel-coordinator',
+      script:        'flywheel-coordinator.js',
+      cwd:           '/Users/zeus/olympus/framework/flywheel',
+      interpreter:   NODE,
+      autorestart:   true,
+      restart_delay: 2000,
+      max_restarts:  20,
+      kill_timeout:  5000,
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
+    {
+      // @olympusforge_bot — Telegram build bot for flywheel
+      // Token loaded from ~/olympus/framework/.env via dotenv/config in build-bot.js
+      name:          'olympus-build-bot',
+      script:        'build-bot.js',
+      cwd:           '/Users/zeus/olympus/framework/flywheel',
+      interpreter:   NODE,
+      autorestart:   true,
+      restart_delay: 2000,
+      max_restarts:  10,
+      kill_timeout:  5000,
+      env: {
+        NODE_ENV: 'production',
+      },
+    },
   ],
 };

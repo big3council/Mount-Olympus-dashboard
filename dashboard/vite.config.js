@@ -16,6 +16,10 @@ export default defineConfig({
         target: 'http://localhost:18780',
         changeOrigin: true,
       },
+      '/flywheel': {
+        target: 'http://localhost:18780',
+        changeOrigin: true,
+      },
       '/live': {
         target: 'ws://localhost:18780',
         ws: true,
@@ -26,5 +30,23 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 3000,
     strictPort: true,
+    proxy: {
+      '/projects': {
+        target: 'http://localhost:18780',
+        changeOrigin: true,
+      },
+      '/gaia': {
+        target: 'http://localhost:18780',
+        changeOrigin: true,
+      },
+      '/flywheel': {
+        target: 'http://localhost:18780',
+        changeOrigin: true,
+      },
+      '/live': {
+        target: 'ws://localhost:18780',
+        ws: true,
+      },
+    },
   },
 });

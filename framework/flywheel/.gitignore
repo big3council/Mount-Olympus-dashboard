@@ -1,0 +1,8 @@
+# Runtime data — Job/WP/Plan/Dep/Return/Finding records written at runtime.
+# The primitive subdirs themselves are tracked (.gitkeep), but their contents stay local.
+jobs/*.json
+routing_plans/*.json
+work_packages/*.json
+dependency_requests/*.json
+returns/*.json
+findings/*.json
