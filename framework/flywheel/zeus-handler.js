@@ -188,7 +188,7 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       log('trivial — Zeus handling directly');
       const response = await openclawCall(
         ZEUS_OPENCLAW,
-        'You are Zeus. Answer this request directly, thoroughly, and concisely.',
+        'You are Zeus. Answer this request directly and concisely. Keep your response under 1500 characters. No padding, no preamble — just the answer.',
         prompt,
         `zeus-trivial-${job_id.slice(-8)}-${Date.now()}`
       );
@@ -226,33 +226,35 @@ export async function executeJob({ job_id, prompt, chat_id }) {
     await flywheelPost(`/routing_plans/${plan.id}/ratify`, { ratified_by: 'zeus' });
     log('zeus ratified');
 
-    for (const [head, { url: endpoint, token }] of Object.entries(COUNCIL_ENDPOINTS)) {
-      try {
-        log('requesting ratification from', head);
-        const ratifyMsg = [
-          `Routing plan for review:`,
-          JSON.stringify(classification, null, 2),
-          '',
-          `Original prompt: ${prompt}`,
-          '',
-          `Reply JSON only: { "ratified": true, "note": "your assessment", "proposed_changes": [] }`,
-        ].join('\n');
+    // Ratify in parallel — Poseidon + Hades simultaneously
+    const ratifyMsg = [
+      `Routing plan for review:`,
+      JSON.stringify(classification, null, 2),
+      '',
+      `Original prompt: ${prompt}`,
+      '',
+      `Reply JSON only: { "ratified": true, "note": "your assessment", "proposed_changes": [] }`,
+    ].join('\n');
 
-        const resp = await openclawCall(
-          endpoint,
-          `You are ${head.charAt(0).toUpperCase() + head.slice(1)}, council member of the B3C.`,
-          ratifyMsg,
-          `zeus-ratify-${head}-${Date.now()}`,
-          token
-        );
-        log(head, 'responded:', resp.slice(0, 150));
-
-        await flywheelPost(`/routing_plans/${plan.id}/ratify`, { ratified_by: head });
-        log(head, 'ratification posted');
-      } catch (e) {
-        log(head, 'ratification error:', e.message);
-      }
-    }
+    await Promise.allSettled(
+      Object.entries(COUNCIL_ENDPOINTS).map(async ([head, { url: endpoint, token }]) => {
+        try {
+          log('requesting ratification from', head);
+          const resp = await openclawCall(
+            endpoint,
+            `You are ${head.charAt(0).toUpperCase() + head.slice(1)}, council member of the B3C.`,
+            ratifyMsg,
+            `zeus-ratify-${head}-${Date.now()}`,
+            token
+          );
+          log(head, 'responded:', resp.slice(0, 150));
+          await flywheelPost(`/routing_plans/${plan.id}/ratify`, { ratified_by: head });
+          log(head, 'ratification posted');
+        } catch (e) {
+          log(head, 'ratification error:', e.message);
+        }
+      })
+    );
 
     // E3: Read updated job to get created work package IDs
     const updatedJobResp = await fetch(`${FLYWHEEL_URL}/jobs/${job_id}`);
@@ -278,17 +280,16 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       manifest.members.map((m) => [m.id, m.openclaw_url ? `${m.openclaw_url}/v1/chat/completions` : null])
     );
 
-    const returns = [];
-    for (const wpId of wpIds) {
-      try {
-        // Accept the WP
-        const wpResp = await fetch(`${FLYWHEEL_URL}/work_packages/${wpId}`);
-        if (!wpResp.ok) { log('wp fetch failed:', wpId); continue; }
-
+    // E4: Dispatch ALL work packages in parallel
+    const dispatchResults = await Promise.allSettled(
+      wpIds.map(async (wpId) => {
         // Read the WP to get assignee
         const wpPath = path.join(__dirname, 'work_packages', `${wpId}.json`);
         let wp;
-        try { wp = JSON.parse(fs.readFileSync(wpPath, 'utf8')); } catch { log('wp file read failed:', wpId); continue; }
+        try { wp = JSON.parse(fs.readFileSync(wpPath, 'utf8')); } catch {
+          log('wp file read failed:', wpId);
+          return null;
+        }
 
         const assignee = (wp.assigned_to || wp.scope?.assigned_to || 'hermes').toLowerCase();
         const endpoint = memberEndpoints[assignee];
@@ -299,48 +300,42 @@ export async function executeJob({ job_id, prompt, chat_id }) {
 
         if (!endpoint) {
           log('no endpoint for', assignee, '— using zeus fallback');
-          // Fallback: have Zeus handle this WP too
           const fallback = await openclawCall(
             ZEUS_OPENCLAW,
-            'You are handling a work package for the B3C council.',
-            `Brief: ${brief}\n\nProvide a thorough response.`,
+            'You are handling a work package for the B3C council. Keep response under 1500 characters.',
+            `Brief: ${brief}\n\nProvide a focused response.`,
             `zeus-fallback-${assignee}-${Date.now()}`
           );
-          returns.push({ assignee, result: fallback });
           await flywheelPost(`/work_packages/${wpId}/return`, {
             returned_by: assignee,
             payload: { raw: fallback },
           });
-          continue;
+          return { assignee, result: fallback };
         }
 
         log('dispatching to', assignee);
         const result = await openclawCall(
           endpoint,
-          'You have a work package from the B3C council.',
-          [
-            `Brief: ${brief}`,
-            '',
-            'Return your output as JSON:',
-            '{ "artifact_type": "string", "deliverable_status": "complete|partial|blocked",',
-            '  "content": "string",',
-            '  "confidence": { "rating": "high|medium|low", "basis": "string" },',
-            '  "flags": { "partial_result": false, "requires_escalation": false, "confidence_low": false } }',
-          ].join('\n'),
+          'You have a work package from the B3C council. Keep response under 1500 characters.',
+          `Brief: ${brief}\n\nReturn a focused, concise response.`,
           `zeus-dispatch-${assignee}-${Date.now()}`,
           TOKENS.quorum
         );
         log(assignee, 'returned:', result.slice(0, 150));
 
-        returns.push({ assignee, result });
         await flywheelPost(`/work_packages/${wpId}/return`, {
           returned_by: assignee,
           payload: { raw: result },
         });
-      } catch (e) {
-        log('dispatch error for', wpId, ':', e.message);
-      }
-    }
+        return { assignee, result };
+      })
+    );
+
+    const returns = dispatchResults
+      .filter((r) => r.status === 'fulfilled' && r.value)
+      .map((r) => r.value);
+    const dispatchErrors = dispatchResults.filter((r) => r.status === 'rejected');
+    if (dispatchErrors.length) log('dispatch failures:', dispatchErrors.length);
 
     // E5: Zeus synthesizes all returns
     log('synthesizing', returns.length, 'returns');
@@ -353,13 +348,13 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       'Returns from council members:',
       ...returns.map((r) => `\n--- ${r.assignee.toUpperCase()} ---\n${r.result}`),
       '',
-      'Provide a comprehensive, unified response that directly answers the original request.',
-      'Do not reference the council process or member names — just deliver the answer.',
+      'Synthesize into a single clear response UNDER 2000 CHARACTERS.',
+      'Be direct. No padding, no preamble, no council references. Just the answer.',
     ].join('\n');
 
     const synthesis = await openclawCall(
       ZEUS_OPENCLAW,
-      'You are Zeus. Deliver the final B3C council synthesis.',
+      'You are Zeus. Deliver the final synthesis. HARD LIMIT: under 2000 characters total. Be concise.',
       synthesisPrompt,
       `zeus-synthesize-${job_id.slice(-8)}-${Date.now()}`
     );
