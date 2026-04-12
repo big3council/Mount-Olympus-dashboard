@@ -187,6 +187,42 @@ app.post("/api/name", express.json(), async (req, res) => {
   }
 });
 
+// ── Gaia council-message condenser (Sonnet) ──────────────────────────────────
+// Server-side proxy so the dashboard never sees the Anthropic API key.
+// Dashboard calls /gaia/condense via the vite /gaia proxy.
+app.post("/gaia/condense", express.json(), async (req, res) => {
+  const { speaker, text } = req.body ?? {};
+  if (!speaker || !text) return res.json({ text: null });
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) return res.json({ text: null });
+  try {
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 120,
+        system: "Summarize what this council member said in 1-2 short plain sentences. State their position and key point simply. No literary language, no metaphors. Write like a brief status update someone can read from across a room.",
+        messages: [{ role: "user", content: `Summarize this council message from ${String(speaker).toUpperCase()}: ${text}` }],
+      }),
+    });
+    if (!r.ok) {
+      console.error("[gaia/condense] upstream", r.status);
+      return res.json({ text: null });
+    }
+    const data = await r.json();
+    const summary = data?.content?.[0]?.text?.trim() || null;
+    res.json({ text: summary });
+  } catch (err) {
+    console.error("[gaia/condense] error", err.message);
+    res.json({ text: null });
+  }
+});
+
 // ── B3C Request entry point ───────────────────────────────────────────────────
 app.post('/request', (req, res) => {
   const { text, channel, target = 'zeus', userId, isWarRoom, priority, messages } = req.body ?? {};

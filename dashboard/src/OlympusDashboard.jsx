@@ -72,6 +72,26 @@ const QUORUM_MAP = {
   GAIA:     [],
 };
 
+// ── Gaia Summarization — proxied server-side ────────────────────────────────
+// The dashboard never holds the Anthropic key. It calls POST /gaia/condense on
+// the framework (vite proxies /gaia to :18780), which uses ANTHROPIC_API_KEY
+// from ~/olympus/framework/.env. Zero browser key exposure.
+async function gaiaCondense(speaker, text) {
+  try {
+    const res = await fetch("/gaia/condense", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ speaker, text }),
+    });
+    if (!res.ok) throw new Error("API " + res.status);
+    const data = await res.json();
+    return data?.text || null;
+  } catch (err) {
+    console.error("[Gaia] Summarization failed:", err.message);
+    return null;
+  }
+}
+
 const css = `
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #05070f; }
@@ -329,13 +349,13 @@ const css = `
 
   .flow-nodes { position: relative; display: flex; flex-direction: column; align-items: center; gap: 0; }
   .flow-row   { display: flex; justify-content: center; gap: 16px; position: relative; z-index: 2; margin-bottom: 0; }
-  .spacer    { height: 80px; }
-  .spacer-sm { height: 64px; }
+  .spacer    { height: 50px; }
+  .spacer-sm { height: 40px; }
 
   .agent-node {
-    width: 205px; border: 1px solid var(--border); border-radius: 8px;
+    width: 195px; border: 1px solid var(--border); border-radius: 6px;
     background: linear-gradient(160deg, rgba(14,18,38,0.97) 0%, rgba(7,9,20,0.98) 100%);
-    padding: 16px 15px 14px; cursor: pointer; transition: all 0.35s;
+    padding: 10px 12px 8px; cursor: pointer; transition: all 0.35s;
     position: relative; overflow: hidden;
     box-shadow: 0 2px 4px rgba(0,0,0,0.7), 0 8px 20px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
   }
@@ -354,22 +374,22 @@ const css = `
     50%       { box-shadow: 0 0 0 1px rgba(200,150,10,0.7), 0 0 24px rgba(200,150,10,0.35), 0 0 48px rgba(200,150,10,0.15), 0 8px 24px rgba(0,0,0,0.6), inset 0 1px 0 rgba(232,184,75,0.12); }
   }
 
-  .node-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-  .node-symbol { font-size: 24px; line-height: 1; filter: drop-shadow(0 0 6px currentColor); }
+  .node-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .node-symbol { font-size: 20px; line-height: 1; filter: drop-shadow(0 0 6px currentColor); }
   .node-status-icon { font-size: 13px; color: var(--muted); }
   .node-status-icon.thinking { color: var(--active); animation: blink 1s step-end infinite; }
   .node-status-icon.done     { color: var(--done); }
   @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-  .node-name { font-family: 'Cinzel', serif; font-size: 15px; font-weight: 600; letter-spacing: 0.12em; color: var(--text); margin-bottom: 3px; }
-  .node-role { font-size: 12px; color: var(--muted); letter-spacing: 0.06em; line-height: 1.3; }
-  .node-progress { margin-top: 10px; height: 2px; background: var(--bg2); border-radius: 2px; overflow: hidden; }
+  .node-name { font-family: 'Cinzel', serif; font-size: 13px; font-weight: 600; letter-spacing: 0.10em; color: var(--text); margin-bottom: 2px; }
+  .node-role { font-size: 10px; color: var(--muted); letter-spacing: 0.05em; line-height: 1.25; }
+  .node-progress { margin-top: 6px; height: 2px; background: var(--bg2); border-radius: 2px; overflow: hidden; }
   .node-progress-bar { height: 100%; border-radius: 2px; transition: width 0.6s ease; }
   .thinking .node-progress-bar { background: linear-gradient(90deg, var(--gold), var(--gold2)); box-shadow: 0 0 8px var(--gold2); animation: progress-pulse 1.5s ease infinite; }
   .done     .node-progress-bar { background: linear-gradient(90deg, var(--done), rgba(94,232,176,0.7)); box-shadow: 0 0 6px var(--done); width: 100% !important; }
   @keyframes progress-pulse { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; box-shadow: 0 0 12px var(--gold2), 0 0 20px rgba(232,184,75,0.3); } }
 
   .council-node {
-    width: 580px; border: 1px solid var(--border); border-radius: 8px;
+    width: 520px; border: 1px solid var(--border); border-radius: 8px;
     background: linear-gradient(160deg, rgba(14,18,38,0.97) 0%, rgba(7,9,20,0.98) 100%);
     padding: 16px 18px 14px; cursor: pointer; transition: all 0.35s;
     position: relative; overflow: hidden;
@@ -398,7 +418,7 @@ const css = `
   .chat-line .speaker.hades    { color: var(--hades); }
 
   /* Detail panel */
-  .detail-panel { width: 380px; border-left: 1px solid var(--border); background: rgba(9,12,24,0.88); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.3s ease; overflow: hidden; backdrop-filter: blur(8px); box-shadow: inset 1px 0 0 rgba(42,53,96,0.3); }
+  .detail-panel { width: 500px; border-left: 1px solid var(--border); background: rgba(9,12,24,0.88); display: flex; flex-direction: column; flex-shrink: 0; transition: width 0.3s ease; overflow: hidden; backdrop-filter: blur(8px); box-shadow: inset 1px 0 0 rgba(42,53,96,0.3); }
   .detail-panel.closed { width: 0; border-left: none; }
   .panel-header { padding: 16px 18px 14px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; }
   .panel-title  { font-family: 'Cinzel', serif; font-size: 13px; letter-spacing: 0.15em; font-weight: 600; color: var(--gold2); }
@@ -410,28 +430,74 @@ const css = `
   .panel-body::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 2px; }
   .panel-section { margin-bottom: 20px; }
   .panel-section-label { font-size: 11px; letter-spacing: 0.2em; color: var(--muted); text-transform: uppercase; margin-bottom: 10px; font-family: 'Cinzel', serif; }
+  /* Panel tab toggle */
+  .panel-tabs { display: flex; gap: 0; margin: 0; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .panel-tab { flex: 1; padding: 10px 0; font-size: 11px; font-family: 'Cinzel', serif; letter-spacing: 0.18em; text-transform: uppercase; border: none; background: transparent; color: var(--muted); cursor: pointer; text-align: center; transition: color 0.25s, background 0.25s; border-bottom: 2px solid transparent; }
+  .panel-tab:hover:not(.active) { color: var(--text); background: rgba(200,150,10,0.03); }
+  .panel-tab.active { color: var(--gold2); border-bottom-color: var(--gold); background: rgba(200,150,10,0.05); }
+
 
   .thought-block { background: linear-gradient(160deg, rgba(13,18,37,0.9) 0%, rgba(7,9,20,0.95) 100%); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; font-size: 12px; line-height: 1.8; color: var(--text); margin-bottom: 8px; position: relative; box-shadow: 0 2px 8px rgba(0,0,0,0.3), inset 0 1px 0 rgba(255,255,255,0.03); }
   .thought-block::before { content: ''; position: absolute; top: 6px; left: 0; width: 2px; height: calc(100% - 12px); border-radius: 0 2px 2px 0; background: var(--gold); box-shadow: 0 0 6px var(--gold); opacity: 0.7; }
 
   @keyframes chat-enter { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
-  .chat-message   { display: flex; gap: 8px; margin-bottom: 12px; align-items: flex-start; animation: chat-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; }
-  .chat-avatar    { width: 22px; height: 22px; border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; margin-top: 1px; }
+  .chat-message   { display: flex; flex-direction: column; margin-bottom: 20px; animation: chat-enter 0.35s cubic-bezier(0.16, 1, 0.3, 1) both; background: linear-gradient(160deg, rgba(12,16,35,0.98) 0%, rgba(8,10,22,0.99) 100%); border: 1px solid rgba(42,53,96,0.5); border-left: none; border-radius: 0 8px 8px 0; overflow: visible; box-shadow: 0 4px 16px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.03); position: relative; }
+  .chat-message::before { content: ''; position: absolute; top: -1px; left: 0; width: 6px; height: calc(100% + 2px); border-radius: 6px 0 0 6px; }
+  .chat-message.zeus-msg::before    { background: var(--zeus);     box-shadow: 0 0 16px rgba(232,184,75,0.5), 0 0 4px rgba(232,184,75,0.8); }
+  .chat-message.poseidon-msg::before { background: var(--poseidon); box-shadow: 0 0 16px rgba(74,184,232,0.5), 0 0 4px rgba(74,184,232,0.8); }
+  .chat-message.hades-msg::before    { background: var(--hades);    box-shadow: 0 0 16px rgba(176,74,220,0.5), 0 0 4px rgba(176,74,220,0.8); }
+  .chat-msg-header { display: flex; align-items: center; gap: 10px; padding: 14px 18px 8px 22px; }
+  .chat-avatar    { width: 32px; height: 32px; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 18px; flex-shrink: 0; }
   .chat-avatar.zeus     { background: rgba(232,184,75,0.15); border: 1px solid rgba(232,184,75,0.3); }
   .chat-avatar.poseidon { background: rgba(74,184,232,0.15); border: 1px solid rgba(74,184,232,0.3); }
   .chat-avatar.hades    { background: rgba(176,74,220,0.15); border: 1px solid rgba(176,74,220,0.3); }
   .chat-content { flex: 1; }
-  .chat-speaker { font-size: 14px; letter-spacing: 0.1em; font-family: 'Cinzel', serif; margin-bottom: 3px; }
+  .chat-speaker { font-size: 15px; letter-spacing: 0.14em; font-family: 'Cinzel', serif; font-weight: 600; }
   .chat-speaker.zeus     { color: var(--zeus); }
   .chat-speaker.poseidon { color: var(--poseidon); }
   .chat-speaker.hades    { color: var(--hades); }
-  .chat-text { font-size: 12px; line-height: 1.7; color: var(--text); background: linear-gradient(160deg, rgba(13,18,37,0.9) 0%, rgba(7,9,20,0.95) 100%); border: 1px solid var(--border); border-radius: 5px; padding: 9px 11px; box-shadow: 0 2px 8px rgba(0,0,0,0.3); }
+  .chat-text { font-size: 15px; line-height: 1.85; color: var(--text); padding: 4px 18px 16px 22px; }
 
   .vote-badge { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: 3px; font-size: 11px; letter-spacing: 0.1em; margin-top: 4px; font-family: 'Cinzel', serif; }
   .vote-badge.approve { background: rgba(94,232,176,0.12); border: 1px solid rgba(94,232,176,0.4); color: var(--done); box-shadow: 0 0 10px rgba(94,232,176,0.15); }
   .vote-badge.calling { background: rgba(240,192,96,0.08); border: 1px solid rgba(240,192,96,0.3); color: var(--active); }
   .vote-badge.aye     { background: rgba(94,232,176,0.06); border: 1px solid rgba(94,232,176,0.2); color: rgba(94,232,176,0.7); }
+
+  /* Gaia summary card styles */
+  @keyframes shimmer {
+    0% { background-position: -200px 0; }
+    100% { background-position: 200px 0; }
+  }
+  .gaia-shimmer {
+    height: 14px; border-radius: 3px; margin: 6px 0;
+    background: linear-gradient(90deg, rgba(120,216,122,0.04) 0%, rgba(120,216,122,0.12) 50%, rgba(120,216,122,0.04) 100%);
+    background-size: 200px 100%; animation: shimmer 1.8s ease-in-out infinite;
+  }
+  .gaia-shimmer-short { width: 65%; }
+  .gaia-shimmer-long  { width: 90%; }
+  .gaia-summary-text {
+    font-size: 14px; line-height: 1.75; color: rgba(120,216,122,0.85);
+    font-style: italic; padding: 0 18px 4px 22px;
+  }
+  .gaia-summary-label {
+    font-size: 9px; letter-spacing: 0.18em; color: rgba(120,216,122,0.4);
+    text-transform: uppercase; padding: 0 18px 0 22px; font-family: 'Cinzel', serif;
+  }
+  .card-expand-btn {
+    display: flex; align-items: center; gap: 4px; padding: 6px 18px 10px 22px;
+    font-size: 10px; color: var(--muted); letter-spacing: 0.1em; cursor: pointer;
+    border: none; background: none; font-family: 'JetBrains Mono', monospace;
+    transition: color 0.2s;
+  }
+  .card-expand-btn:hover { color: var(--text); }
+  .card-expand-btn .chevron { transition: transform 0.25s; display: inline-block; }
+  .card-expand-btn .chevron.open { transform: rotate(180deg); }
+  .card-full-text {
+    font-size: 13px; line-height: 1.7; color: var(--text); padding: 0 18px 14px 22px;
+    border-top: 1px solid var(--border); margin-top: 6px; padding-top: 10px;
+    opacity: 0.8;
+  }
 
   @keyframes vote-burst { 0% { opacity: 0; transform: scale(0.85); } 40% { opacity: 1; transform: scale(1.04); box-shadow: 0 0 40px rgba(94,232,176,0.35); } 70% { transform: scale(0.98); } 100% { transform: scale(1); } }
   @keyframes unanimous-shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
@@ -1553,25 +1619,134 @@ function VoteStamps({ messages, missionId }) {
 }
 
 function CouncilThread({ messages }) {
+  const [expandedCards, setExpandedCards] = useState(new Set());
+  const [summaries, setSummaries] = useState({});
+
+  // Fire summarization for new messages
+  useEffect(() => {
+    messages.forEach((msg, i) => {
+      const key = `${msg.speaker}-${i}`;
+      if (summaries[key] !== undefined) return;
+      if (!msg.text || msg.text.length < 80) {
+        setSummaries(prev => ({ ...prev, [key]: msg.text }));
+        return;
+      }
+      setSummaries(prev => ({ ...prev, [key]: null }));
+      gaiaCondense(msg.speaker, msg.text).then(summary => {
+        setSummaries(prev => ({ ...prev, [key]: summary || msg.text }));
+      });
+    });
+  }, [messages.length]);
+
+  const toggleExpand = (key) => {
+    setExpandedCards(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      return next;
+    });
+  };
+
   return (
     <>
-      {messages.map((msg, i) => (
-        <div key={i} className="chat-message" style={{ animationDelay: `${i * 0.04}s` }}>
-          <div className={`chat-avatar ${msg.speaker}`}>
-            {msg.speaker === "zeus" ? "⚡" : msg.speaker === "poseidon" ? "🔱" : "🏛"}
+      {messages.map((msg, i) => {
+        const key = `${msg.speaker}-${i}`;
+        const summary = summaries[key];
+        const isLoading = summary === null || summary === undefined;
+        const isShort = msg.text && msg.text.length < 80;
+        const isExpanded = expandedCards.has(key);
+        const hasSummary = !isLoading && !isShort && summary !== msg.text;
+
+        return (
+          <div key={i} className={`chat-message ${msg.speaker}-msg`} style={{ animationDelay: `${i * 0.06}s` }}>
+            <div className="chat-msg-header">
+              <div className={`chat-avatar ${msg.speaker}`}>
+                {msg.speaker === "zeus" ? "\u26a1" : msg.speaker === "poseidon" ? "\ud83d\udd31" : "\ud83c\udfdb"}
+              </div>
+              <div className="chat-content">
+                <div className={`chat-speaker ${msg.speaker}`}>{msg.speaker.toUpperCase()}</div>
+              </div>
+              {msg.vote === "calling" && <div className="vote-badge calling">{"\u2696"} CALLING VOTE</div>}
+              {msg.vote === "aye"     && <div className="vote-badge aye">{"\u2713"} AYE</div>}
+            </div>
+            {isLoading && !isShort ? (
+              <div style={{ padding: "4px 18px 12px 22px" }}>
+                <div className="gaia-shimmer gaia-shimmer-long" />
+                <div className="gaia-shimmer gaia-shimmer-short" />
+              </div>
+            ) : hasSummary ? (
+              <>
+                <div className="gaia-summary-label">GAIA WITNESS</div>
+                <div className="gaia-summary-text">{summary}</div>
+                <button className="card-expand-btn" onClick={() => toggleExpand(key)}>
+                  <span className={`chevron ${isExpanded ? "open" : ""}`}>{"\u25be"}</span>
+                  {isExpanded ? "collapse" : "read full"}
+                </button>
+                {isExpanded && <div className="card-full-text">{msg.text}</div>}
+              </>
+            ) : (
+              <div className="chat-text">{msg.text}</div>
+            )}
           </div>
-          <div className="chat-content">
-            <div className={`chat-speaker ${msg.speaker}`}>{msg.speaker.toUpperCase()}</div>
-            <div className="chat-text">{msg.text}</div>
-            {msg.vote === "calling" && <div className="vote-badge calling">⚖ CALLING VOTE</div>}
-            {msg.vote === "aye"     && <div className="vote-badge aye">✓ AYE</div>}
-          </div>
-        </div>
-      ))}
+        );
+      })}
       {messages.length === 0 && (
-        <div style={{ color: "var(--muted)", fontSize: 12 }}>Awaiting council...</div>
+        <div style={{ color: "var(--muted)", fontSize: 15, fontFamily: "Cinzel, serif", letterSpacing: "0.12em", textAlign: "center", padding: "24px 0" }}>Awaiting council...</div>
       )}
     </>
+  );
+}
+
+
+
+// ── SummarizedBlock — Gaia summary + expand for any long text ─────────────────
+function SummarizedBlock({ text, label, style, threshold = 120 }) {
+  const [summary, setSummary] = useState(undefined);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!text || text.length < threshold) {
+      setSummary(text);
+      return;
+    }
+    setSummary(null); // null = loading
+    let cancelled = false;
+    gaiaCondense("council member", text).then(s => {
+      if (!cancelled) setSummary(s || text);
+    });
+    return () => { cancelled = true; };
+  }, [text]);
+
+  if (!text) return null;
+
+  const isLoading = summary === null;
+  const isShort = text.length < threshold;
+  const hasSummary = !isLoading && !isShort && summary !== text;
+
+  if (isShort) {
+    return <div className="thought-block" style={style}>{text}</div>;
+  }
+
+  return (
+    <div style={{ marginBottom: 8 }}>
+      {isLoading ? (
+        <div style={{ padding: "8px 0" }}>
+          <div className="gaia-shimmer gaia-shimmer-long" />
+          <div className="gaia-shimmer gaia-shimmer-short" />
+        </div>
+      ) : hasSummary ? (
+        <>
+          <div className="gaia-summary-label">GAIA SUMMARY</div>
+          <div className="gaia-summary-text">{summary}</div>
+          <button className="card-expand-btn" onClick={() => setExpanded(!expanded)}>
+            <span className={`chevron ${expanded ? "open" : ""}`}>{"▾"}</span>
+            {expanded ? "collapse" : "read full"}
+          </button>
+          {expanded && <div className="card-full-text">{text}</div>}
+        </>
+      ) : (
+        <div className="thought-block" style={style}>{text}</div>
+      )}
+    </div>
   );
 }
 
@@ -2246,6 +2421,7 @@ export default function OlympusDashboard() {
 
   // ── UI state ───────────────────────────────────────────────────────────────
   const [selectedNode, setSelectedNode] = useState(null);
+  const [panelTabMode, setPanelTabMode] = useState("council"); // "council" | "agent"
   const [wsStatus, setWsStatus]         = useState("connecting");
   const [time, setTime]                 = useState(new Date().toLocaleTimeString());
   const [gaiaReport, setGaiaReport]     = useState(null);
@@ -2948,10 +3124,10 @@ useEffect(() => {
     if (!activeMission) { setSelectedNode(null); return; }
     if (!["tier2", "tier3"].includes(mode)) { setSelectedNode(null); return; }
     if      (stage === "idle")            setSelectedNode(null);
-    else if (stage === "council_initial") setSelectedNode("council_initial");
-    else if (stage === "execution")       setSelectedNode("zeus_exec");
-    else if (stage === "council_backend") setSelectedNode("council_backend");
-    else if (stage === "done")            setSelectedNode("output");
+    else if (stage === "council_initial") { setSelectedNode("council_initial"); setPanelTabMode("council"); }
+    else if (stage === "execution")       { setSelectedNode("zeus_exec"); setPanelTabMode("council"); }
+    else if (stage === "council_backend") { setSelectedNode("council_backend"); setPanelTabMode("council"); }
+    else if (stage === "done")            { setSelectedNode("output"); setPanelTabMode("council"); }
   }, [stage, activeMissionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Node/connection state helpers (tier3) ─────────────────────────────────
@@ -3168,19 +3344,19 @@ useEffect(() => {
             {nodeTasks.zeus && (
               <div className="panel-section">
                 <div className="panel-section-label">Deliverable</div>
-                <div className="thought-block">{nodeTasks.zeus}</div>
+                <SummarizedBlock text={nodeTasks.zeus} />
               </div>
             )}
             {nodeThoughts.zeus && (
               <div className="panel-section">
                 <div className="panel-section-label">Reasoning</div>
-                <div className="thought-block">{nodeThoughts.zeus}</div>
+                <SummarizedBlock text={nodeThoughts.zeus} />
               </div>
             )}
             {zeusDiagnostic?.agent === "zeus" && (
               <div className="panel-section">
                 <div className="panel-section-label" style={{ color: "var(--gold)" }}>Zeus Diagnostic</div>
-                <div className="thought-block" style={{ borderLeftColor: "var(--gold)", color: "rgba(232,184,75,0.85)" }}>{zeusDiagnostic.diagnosis}</div>
+                <SummarizedBlock text={zeusDiagnostic.diagnosis} threshold={300} style={{ borderLeftColor: "var(--gold)", color: "rgba(232,184,75,0.85)" }} />
               </div>
             )}
           </>
@@ -3199,19 +3375,19 @@ useEffect(() => {
             {nodeTasks.poseidon && (
               <div className="panel-section">
                 <div className="panel-section-label">Deliverable</div>
-                <div className="thought-block">{nodeTasks.poseidon}</div>
+                <SummarizedBlock text={nodeTasks.poseidon} />
               </div>
             )}
             {nodeThoughts.poseidon && (
               <div className="panel-section">
                 <div className="panel-section-label">Reasoning</div>
-                <div className="thought-block" style={{ borderLeftColor: "var(--poseidon)" }}>{nodeThoughts.poseidon}</div>
+                <SummarizedBlock text={nodeThoughts.poseidon} style={{ borderLeftColor: "var(--poseidon)" }} />
               </div>
             )}
             {zeusDiagnostic?.agent === "poseidon" && (
               <div className="panel-section">
                 <div className="panel-section-label" style={{ color: "var(--gold)" }}>Zeus Diagnostic</div>
-                <div className="thought-block" style={{ borderLeftColor: "var(--gold)", color: "rgba(232,184,75,0.85)" }}>{zeusDiagnostic.diagnosis}</div>
+                <SummarizedBlock text={zeusDiagnostic.diagnosis} threshold={300} style={{ borderLeftColor: "var(--gold)", color: "rgba(232,184,75,0.85)" }} />
               </div>
             )}
           </>
@@ -3230,19 +3406,19 @@ useEffect(() => {
             {nodeTasks.hades && (
               <div className="panel-section">
                 <div className="panel-section-label">Deliverable</div>
-                <div className="thought-block">{nodeTasks.hades}</div>
+                <SummarizedBlock text={nodeTasks.hades} />
               </div>
             )}
             {nodeThoughts.hades && (
               <div className="panel-section">
                 <div className="panel-section-label">Reasoning</div>
-                <div className="thought-block" style={{ borderLeftColor: "var(--hades)" }}>{nodeThoughts.hades}</div>
+                <SummarizedBlock text={nodeThoughts.hades} style={{ borderLeftColor: "var(--hades)" }} />
               </div>
             )}
             {zeusDiagnostic?.agent === "hades" && (
               <div className="panel-section">
                 <div className="panel-section-label" style={{ color: "var(--gold)" }}>Zeus Diagnostic</div>
-                <div className="thought-block" style={{ borderLeftColor: "var(--gold)", color: "rgba(232,184,75,0.85)" }}>{zeusDiagnostic.diagnosis}</div>
+                <SummarizedBlock text={zeusDiagnostic.diagnosis} threshold={300} style={{ borderLeftColor: "var(--gold)", color: "rgba(232,184,75,0.85)" }} />
               </div>
             )}
           </>
@@ -3521,10 +3697,39 @@ useEffect(() => {
     const coordinatingSpeaker = nodeStatus["zeus:coordination"];
     const currentSpeaker = isCoordinating && coordinatingSpeaker?.status === "working" ? "zeus" : null;
 
+    const panel = renderPanel();
     return (
       <>
         {renderSidebar()}
         {renderTier2Content()}
+        {/* Detail panel — same as Tier 3 */}
+        <div className={`detail-panel ${panel ? "" : "closed"}`}>
+          {panel && (
+            <>
+              <div className="panel-header">
+                <div className="panel-title">{panelTabMode === "council" ? "B3C COUNCIL" : panel.title}</div>
+                <button className="panel-close" onClick={() => { setSelectedNode(null); setPanelTabMode("council"); }}>✕</button>
+              </div>
+              <div className="panel-tabs">
+                <button className={`panel-tab ${panelTabMode === "council" ? "active" : ""}`} onClick={() => setPanelTabMode("council")}>Council</button>
+                <button className={`panel-tab ${panelTabMode === "agent" ? "active" : ""}`} onClick={() => setPanelTabMode("agent")}>Agent</button>
+              </div>
+              <div className="panel-body">
+                {panelTabMode === "council" ? (
+                  <>
+                    <VoteStamps messages={[...(councilMessages || []), ...(councilBackendMessages || [])]} missionId={activeMissionId} />
+                    <div className="panel-section">
+                      <div className="panel-section-label">Council deliberation</div>
+                      <CouncilThread messages={[...(councilMessages || []), ...(councilBackendMessages || [])]} />
+                    </div>
+                  </>
+                ) : (
+                  panel.content
+                )}
+              </div>
+            </>
+          )}
+        </div>
       </>
     );
   };
@@ -3590,7 +3795,7 @@ useEffect(() => {
               else                                    { badgeLabel = null;        badgeClass = ""; }
 
               return (
-                <div key={agent.key} className={`tier2-card ${cardClass}`}>
+                <div key={agent.key} className={`tier2-card ${cardClass}`} onClick={() => { setSelectedNode(agent.key === "zeus" ? "zeus_exec" : agent.key); setPanelTabMode("agent"); }} style={{ cursor: "pointer" }}>
                   <div className="tier2-card-head">
                     <span className="tier2-card-symbol">{agent.symbol}</span>
                     <span className="tier2-card-name">{agent.name}</span>
@@ -3716,10 +3921,27 @@ useEffect(() => {
           {panel && (
             <>
               <div className="panel-header">
-                <div className="panel-title">{panel.title}</div>
-                <button className="panel-close" onClick={() => setSelectedNode(null)}>✕</button>
+                <div className="panel-title">{panelTabMode === "council" ? "B3C COUNCIL" : panel.title}</div>
+                <button className="panel-close" onClick={() => { setSelectedNode(null); setPanelTabMode("council"); }}>✕</button>
               </div>
-              <div className="panel-body">{panel.content}</div>
+              {/* Tab toggle */}
+              <div className="panel-tabs">
+                <button className={`panel-tab ${panelTabMode === "council" ? "active" : ""}`} onClick={() => setPanelTabMode("council")}>Council</button>
+                <button className={`panel-tab ${panelTabMode === "agent" ? "active" : ""}`} onClick={() => setPanelTabMode("agent")}>Agent</button>
+              </div>
+              <div className="panel-body">
+                {panelTabMode === "council" ? (
+                  <>
+                    <VoteStamps messages={[...(councilMessages || []), ...(councilBackendMessages || [])]} missionId={activeMissionId} />
+                    <div className="panel-section">
+                      <div className="panel-section-label">Council deliberation</div>
+                      <CouncilThread messages={[...(councilMessages || []), ...(councilBackendMessages || [])]} />
+                    </div>
+                  </>
+                ) : (
+                  panel.content
+                )}
+              </div>
             </>
           )}
         </div>
@@ -3846,7 +4068,7 @@ useEffect(() => {
                   return (
                     <div key={agent.key}
                       className={`agent-node ${nodeClass} ${selectedNode === agent.key ? "selected" : ""}`}
-                      onClick={() => setSelectedNode(agent.key)}
+                      onClick={() => { setSelectedNode(agent.key); setPanelTabMode('agent'); }}
                     >
                       <div className="node-header">
                         <span className="node-symbol">{agent.symbol}</span>

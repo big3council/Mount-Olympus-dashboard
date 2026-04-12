@@ -46,6 +46,11 @@ const activeBots = new Map();
 // Primary return path — has the exact chatId from the incoming Telegram message.
 const pending = new Map();
 
+// ── Deduplication guard: prevent double delivery ──────────────────────────────
+// Tracks requestIds that have already been delivered. Entries auto-expire after 5 minutes.
+const deliveredIds = new Map(); // requestId → timestamp
+const DEDUP_TTL = 5 * 60 * 1000; // 5 minutes
+
 // ── Telegram message length limit ─────────────────────────────────────────────
 const TG_LIMIT = 4096;
 const TG_SAFE  = 4000; // split point — leaves buffer for Markdown formatting
@@ -134,6 +139,18 @@ function resolveDestination(channel, directTarget) {
 function routeComplete(event) {
   const output = event.output;
   if (!output) return;
+
+  // Dedup guard: skip if already delivered for this requestId
+  if (deliveredIds.has(event.id)) {
+    console.log(`[Telegram] Dedup: already delivered id=${event.id}, skipping`);
+    return;
+  }
+  deliveredIds.set(event.id, Date.now());
+  // Prune expired entries (older than 5 min)
+  const now = Date.now();
+  for (const [id, ts] of deliveredIds) {
+    if (now - ts > DEDUP_TTL) deliveredIds.delete(id);
+  }
 
   // Path 1: pending map — exact chatId from the incoming Telegram message
   const entry = pending.get(event.id);

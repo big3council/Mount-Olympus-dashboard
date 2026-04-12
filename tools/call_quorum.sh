@@ -8,7 +8,7 @@ MESSAGE="$*"
 
 if [ -z "$AGENT" ] || [ -z "$MESSAGE" ]; then
   echo "Usage: call_quorum.sh <agent_name> <message>"
-  echo "Available: hermes athena apollo hestia aphrodite iris demeter prometheus hephaestus nike artemis ares"
+  echo "Available: hermes athena apollo hestia"
   exit 1
 fi
 
@@ -19,14 +19,6 @@ case "$AGENT_LOWER" in
   athena)      IP="192.168.1.189" ;;
   apollo)      IP="192.168.1.170" ;;
   hestia)      IP="192.168.1.105" ;;
-  aphrodite)   IP="192.168.1.123" ;;
-  iris)        IP="192.168.1.117" ;;
-  demeter)     IP="192.168.1.113" ;;
-  prometheus)  IP="192.168.1.131" ;;
-  hephaestus)  IP="192.168.1.156" ;;
-  nike)        IP="192.168.1.165" ;;
-  artemis)     IP="192.168.1.152" ;;
-  ares)        IP="192.168.1.182" ;;
   *) echo "ERROR: Unknown agent: $AGENT"; exit 1 ;;
 esac
 
