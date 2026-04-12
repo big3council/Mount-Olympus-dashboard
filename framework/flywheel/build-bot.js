@@ -1,25 +1,30 @@
 // ~/olympus/framework/flywheel/build-bot.js
 // Mount Olympus — Build Bot (Telegram)
 // Runs as PM2 process `olympus-build-bot`.
-// Posts build jobs into the Flywheel via POST /flywheel/jobs.
-// ADDITIVE ONLY — isolated from existing bot handlers, uses its own token.
+// Every message = a build job. No commands required.
+// First line = title, remaining lines = description.
+// Routing class auto-detected from keywords.
 
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import TelegramBot from 'node-telegram-bot-api';
 
-// .env lives one dir up at ~/olympus/framework/.env (shared with server.js).
-// build-bot.js sits in framework/flywheel/, so load the parent .env explicitly
-// rather than relying on cwd (PM2 sets cwd to this dir, not the framework dir).
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
-const TOKEN         = process.env.BUILD_BOT_TOKEN;
-const FLYWHEEL_URL  = process.env.BUILD_BOT_FLYWHEEL_URL || 'http://127.0.0.1:18780/flywheel';
-const ALLOWED_CHATS = (process.env.BUILD_BOT_ALLOWED_CHATS || '')
-  .split(',').map((s) => s.trim()).filter(Boolean);
+const TOKEN        = process.env.BUILD_BOT_TOKEN;
+const FLYWHEEL_URL = process.env.BUILD_BOT_FLYWHEEL_URL || 'http://127.0.0.1:18780/flywheel';
+
+// User mapping: BUILD_BOT_USERS=carson:tg_username,tyler:tg_username
+// Maps Telegram usernames to submitter names. If not set, accepts all
+// senders in lax mode (uses raw Telegram username as submitter).
+const USER_MAP = new Map();
+for (const pair of (process.env.BUILD_BOT_USERS || '').split(',')) {
+  const [name, tgUser] = pair.trim().split(':');
+  if (name && tgUser) USER_MAP.set(tgUser.toLowerCase(), name.toLowerCase());
+}
 
 if (!TOKEN) {
   console.error('[build-bot] BUILD_BOT_TOKEN missing in env — exiting');
@@ -27,18 +32,49 @@ if (!TOKEN) {
 }
 
 const bot = new TelegramBot(TOKEN, { polling: true });
-
-function log(...args) {
-  console.log('[build-bot]', new Date().toISOString(), ...args);
-}
+const log = (...args) => console.log('[build-bot]', new Date().toISOString(), ...args);
 
 log('started — polling Telegram, flywheel =', FLYWHEEL_URL);
-
-function authorized(chatId) {
-  if (ALLOWED_CHATS.length === 0) return true; // lax mode, accept all
-  return ALLOWED_CHATS.includes(String(chatId));
+if (USER_MAP.size) {
+  log('authorized users:', [...USER_MAP.entries()].map(([tg, name]) => `${name}(${tg})`).join(', '));
+} else {
+  log('lax mode — accepting all senders (set BUILD_BOT_USERS to restrict)');
 }
 
+// ---------------------------------------------------------------------------
+// Routing class detection — keyword-based
+// ---------------------------------------------------------------------------
+const STRATEGIC_WORDS = [
+  'architect', 'redesign', 'overhaul', 'migrate', 'infrastructure',
+  'refactor', 'strategic', 'rethink', 'rebuild from scratch', 'full rewrite',
+  'rearchitect', 'replatform',
+];
+const TRIVIAL_WORDS = [
+  'quick', 'simple', 'minor', 'fix', 'typo', 'small', 'tweak', 'trivial',
+  'bump', 'rename', 'update text', 'change label', 'cleanup', 'lint',
+];
+
+function classifyRouting(text) {
+  const lower = text.toLowerCase();
+  if (STRATEGIC_WORDS.some((w) => lower.includes(w))) return 'strategic';
+  if (TRIVIAL_WORDS.some((w) => lower.includes(w))) return 'trivial';
+  return 'standard';
+}
+
+// ---------------------------------------------------------------------------
+// Sender resolution
+// ---------------------------------------------------------------------------
+function resolveSender(msg) {
+  const tgUser = (msg.from?.username || '').toLowerCase();
+  const tgId = String(msg.from?.id || '');
+  if (USER_MAP.size === 0) return tgUser || tgId; // lax mode
+  if (USER_MAP.has(tgUser)) return USER_MAP.get(tgUser);
+  return null; // unknown → reject
+}
+
+// ---------------------------------------------------------------------------
+// Flywheel submission
+// ---------------------------------------------------------------------------
 async function submitJob({ title, description, submitter, routing_class }) {
   const resp = await fetch(`${FLYWHEEL_URL}/jobs`, {
     method: 'POST',
@@ -52,130 +88,51 @@ async function submitJob({ title, description, submitter, routing_class }) {
   return resp.json();
 }
 
-function parsePayload(match) {
-  const payload = (match[1] || '').trim();
-  if (!payload) return null;
-  const lines = payload.split('\n');
-  return {
-    title: lines[0].trim(),
-    description: lines.slice(1).join('\n').trim(),
-  };
-}
-
-// ── /start + /help ──────────────────────────────────────────────────────────
-bot.onText(/^\/start$/i, (msg) => {
-  bot.sendMessage(msg.chat.id,
-    `OLYMPUS FORGE — Mount Olympus Build Bot\n\nCommands:\n/build <title> — submit a standard job (plan + ratify)\n/trivial <title> — submit a trivial job (instant WP)\n/strategic <title> — submit a strategic job\n/status — show flywheel health\n/help — show this message`);
-});
-
-bot.onText(/^\/help$/i, (msg) => {
-  bot.sendMessage(msg.chat.id,
-    `Commands:\n/build <title> — standard job\n/trivial <title> — trivial (instant WP, no plan)\n/strategic <title> — strategic job\n/status — flywheel health`);
-});
-
-bot.onText(/^\/status$/i, async (msg) => {
-  try {
-    const resp = await fetch(`${FLYWHEEL_URL}/health`);
-    const data = await resp.json();
-    const jobsResp = await fetch(`${FLYWHEEL_URL}/jobs`);
-    const jobsData = await jobsResp.json();
-    await bot.sendMessage(msg.chat.id,
-      `Flywheel: ${data.ok ? 'OK' : 'ERROR'}\nJobs: ${jobsData.count || 0}\nPrimitives: ${(data.primitives || []).join(', ')}`);
-  } catch (e) {
-    await bot.sendMessage(msg.chat.id, `Flywheel error: ${e.message}`);
-  }
-});
-
-// ── Log every incoming message for debugging ────────────────────────────────
-bot.on('message', (msg) => {
-  log(`msg from ${msg.from?.username || msg.from?.id} in chat ${msg.chat.id}: ${(msg.text || '').slice(0, 100)}`);
-});
-
-// ── Job commands (case-insensitive) ────────────────────────────────────────
-bot.onText(/^\/build(?:\s+([\s\S]*))?$/i, async (msg, match) => {
+// ---------------------------------------------------------------------------
+// Universal handler — every text message becomes a build job.
+// First line = title. Remaining lines = description.
+// ---------------------------------------------------------------------------
+bot.on('message', async (msg) => {
   const chatId = msg.chat.id;
-  if (!authorized(chatId)) {
-    return bot.sendMessage(chatId, 'Not authorized for /build.');
+  const text = (msg.text || '').trim();
+
+  // Ignore non-text messages (stickers, photos, voice, etc.)
+  if (!text) return;
+
+  log(`msg from ${msg.from?.username || msg.from?.id} (chat ${chatId}): ${text.slice(0, 120)}`);
+
+  // Auth check
+  const sender = resolveSender(msg);
+  if (sender === null) {
+    log('rejected — unknown user', msg.from?.username || msg.from?.id);
+    return bot.sendMessage(chatId, 'Not authorized. Contact Carson.');
   }
-  const parsed = parsePayload(match);
-  if (!parsed) {
-    return bot.sendMessage(chatId,
-      'Usage: /build <title>\\n<optional description>\\n\\nFirst line = title. Routing class = standard.');
-  }
-  const submitter = `telegram:${msg.from?.username || msg.from?.id}`;
+
+  // Parse input
+  const lines = text.split('\n');
+  const title = lines[0].trim();
+  const description = lines.slice(1).join('\n').trim();
+  const routing_class = classifyRouting(text);
+
+  // Submit to flywheel
   try {
-    const job = await submitJob({
-      title: parsed.title,
-      description: parsed.description,
-      submitter,
-      routing_class: 'standard',
-    });
-    log('submitted standard job', job.id, 'for', submitter);
+    const job = await submitJob({ title, description, submitter: sender, routing_class });
+    log('submitted', routing_class, 'job', job.id, 'for', sender);
     await bot.sendMessage(chatId,
-      `Job submitted: ${job.id}\nStatus: ${job.status}\nClass: ${job.routing_class}`);
+      `\u26A1 Job received [${routing_class}]. Routing to the family now.\n\n${job.id}`);
   } catch (e) {
     log('submit error', e.message);
     await bot.sendMessage(chatId, `Flywheel error: ${e.message}`);
   }
 });
 
-bot.onText(/^\/trivial(?:\s+([\s\S]*))?$/i, async (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!authorized(chatId)) {
-    return bot.sendMessage(chatId, 'Not authorized for /trivial.');
-  }
-  const parsed = parsePayload(match);
-  if (!parsed) {
-    return bot.sendMessage(chatId, 'Usage: /trivial <title>\\n<optional description>');
-  }
-  const submitter = `telegram:${msg.from?.username || msg.from?.id}`;
-  try {
-    const job = await submitJob({
-      title: parsed.title,
-      description: parsed.description,
-      submitter,
-      routing_class: 'trivial',
-    });
-    log('submitted trivial job', job.id, 'for', submitter);
-    await bot.sendMessage(chatId,
-      `Trivial job: ${job.id}\nStatus: ${job.status}\nWP: ${(job.work_package_ids || []).join(', ') || '(none)'}`);
-  } catch (e) {
-    log('submit error', e.message);
-    await bot.sendMessage(chatId, `Flywheel error: ${e.message}`);
-  }
-});
-
-bot.onText(/^\/strategic(?:\s+([\s\S]*))?$/i, async (msg, match) => {
-  const chatId = msg.chat.id;
-  if (!authorized(chatId)) {
-    return bot.sendMessage(chatId, 'Not authorized for /strategic.');
-  }
-  const parsed = parsePayload(match);
-  if (!parsed) {
-    return bot.sendMessage(chatId, 'Usage: /strategic <title>\\n<optional description>');
-  }
-  const submitter = `telegram:${msg.from?.username || msg.from?.id}`;
-  try {
-    const job = await submitJob({
-      title: parsed.title,
-      description: parsed.description,
-      submitter,
-      routing_class: 'strategic',
-    });
-    log('submitted strategic job', job.id, 'for', submitter);
-    await bot.sendMessage(chatId,
-      `Strategic job submitted: ${job.id}\nStatus: ${job.status}\nAwaiting routing plan.`);
-  } catch (e) {
-    log('submit error', e.message);
-    await bot.sendMessage(chatId, `Flywheel error: ${e.message}`);
-  }
-});
-
+// ---------------------------------------------------------------------------
+// Error handling + graceful shutdown
+// ---------------------------------------------------------------------------
 bot.on('polling_error', (err) => {
   console.error('[build-bot] polling_error', err.code, err.message);
 });
 
-// Graceful shutdown — stop polling before exit to avoid 409 Conflict on restart.
 function shutdown() {
   log('shutting down');
   bot.stopPolling().finally(() => process.exit(0));
