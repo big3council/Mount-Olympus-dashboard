@@ -62,7 +62,37 @@ function parsePayload(match) {
   };
 }
 
-bot.onText(/^\/build(?:\s+([\s\S]*))?$/, async (msg, match) => {
+// ── /start + /help ──────────────────────────────────────────────────────────
+bot.onText(/^\/start$/i, (msg) => {
+  bot.sendMessage(msg.chat.id,
+    `OLYMPUS FORGE — Mount Olympus Build Bot\n\nCommands:\n/build <title> — submit a standard job (plan + ratify)\n/trivial <title> — submit a trivial job (instant WP)\n/strategic <title> — submit a strategic job\n/status — show flywheel health\n/help — show this message`);
+});
+
+bot.onText(/^\/help$/i, (msg) => {
+  bot.sendMessage(msg.chat.id,
+    `Commands:\n/build <title> — standard job\n/trivial <title> — trivial (instant WP, no plan)\n/strategic <title> — strategic job\n/status — flywheel health`);
+});
+
+bot.onText(/^\/status$/i, async (msg) => {
+  try {
+    const resp = await fetch(`${FLYWHEEL_URL}/health`);
+    const data = await resp.json();
+    const jobsResp = await fetch(`${FLYWHEEL_URL}/jobs`);
+    const jobsData = await jobsResp.json();
+    await bot.sendMessage(msg.chat.id,
+      `Flywheel: ${data.ok ? 'OK' : 'ERROR'}\nJobs: ${jobsData.count || 0}\nPrimitives: ${(data.primitives || []).join(', ')}`);
+  } catch (e) {
+    await bot.sendMessage(msg.chat.id, `Flywheel error: ${e.message}`);
+  }
+});
+
+// ── Log every incoming message for debugging ────────────────────────────────
+bot.on('message', (msg) => {
+  log(`msg from ${msg.from?.username || msg.from?.id} in chat ${msg.chat.id}: ${(msg.text || '').slice(0, 100)}`);
+});
+
+// ── Job commands (case-insensitive) ────────────────────────────────────────
+bot.onText(/^\/build(?:\s+([\s\S]*))?$/i, async (msg, match) => {
   const chatId = msg.chat.id;
   if (!authorized(chatId)) {
     return bot.sendMessage(chatId, 'Not authorized for /build.');
@@ -89,7 +119,7 @@ bot.onText(/^\/build(?:\s+([\s\S]*))?$/, async (msg, match) => {
   }
 });
 
-bot.onText(/^\/trivial(?:\s+([\s\S]*))?$/, async (msg, match) => {
+bot.onText(/^\/trivial(?:\s+([\s\S]*))?$/i, async (msg, match) => {
   const chatId = msg.chat.id;
   if (!authorized(chatId)) {
     return bot.sendMessage(chatId, 'Not authorized for /trivial.');
@@ -115,7 +145,7 @@ bot.onText(/^\/trivial(?:\s+([\s\S]*))?$/, async (msg, match) => {
   }
 });
 
-bot.onText(/^\/strategic(?:\s+([\s\S]*))?$/, async (msg, match) => {
+bot.onText(/^\/strategic(?:\s+([\s\S]*))?$/i, async (msg, match) => {
   const chatId = msg.chat.id;
   if (!authorized(chatId)) {
     return bot.sendMessage(chatId, 'Not authorized for /strategic.');
