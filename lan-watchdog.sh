@@ -43,6 +43,12 @@ while true; do
       log "LAN down. Promoting WiFi as default route."
       sudo route add default -ifscope $WIFI_IF $(ipconfig getifaddr $WIFI_IF | awk -F. '{print $1"."$2"."$3".1"}') 2>/dev/null || \
       sudo route add default 192.168.1.1 -ifscope $WIFI_IF 2>/dev/null
+      # Remove conflicting LAN IP from WiFi interface if present
+      WIFI_LAN_IP=$(ipconfig getifaddr $WIFI_IF 2>/dev/null)
+      if echo "$WIFI_LAN_IP" | grep -q "^192\.168\.1\."; then
+        sudo /sbin/ifconfig $WIFI_IF delete $WIFI_LAN_IP 2>/dev/null
+        log "Removed conflicting LAN IP $WIFI_LAN_IP from $WIFI_IF to prevent subnet ambiguity"
+      fi
       WIFI_ACTIVE=true
     fi
   fi
