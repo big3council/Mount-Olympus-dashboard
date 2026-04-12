@@ -9,6 +9,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { fileURLToPath } from 'url';
+import { executeJob } from './zeus-handler.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -72,8 +73,8 @@ router.post('/jobs', (req, res) => {
   if (!title || !submitter) {
     return res.status(400).json({ error: 'title and submitter required' });
   }
-  if (!['trivial', 'standard', 'strategic'].includes(routing_class)) {
-    return res.status(400).json({ error: 'routing_class must be trivial|standard|strategic' });
+  if (!['trivial', 'standard', 'strategic', 'pending_classification'].includes(routing_class)) {
+    return res.status(400).json({ error: 'routing_class must be trivial|standard|strategic|pending_classification' });
   }
 
   const id = `job-${crypto.randomUUID()}`;
@@ -92,6 +93,7 @@ router.post('/jobs', (req, res) => {
   writeJson(DIRS.jobs, id, job);
 
   // Trivial jobs skip routing plans — create a WorkPackage directly.
+  // pending_classification jobs skip this too — Zeus classifies and handles.
   if (routing_class === 'trivial') {
     const wpId = `wp-${crypto.randomUUID()}`;
     const wp = {
@@ -431,7 +433,39 @@ router.post('/findings/:id/approve', (req, res) => {
   res.json(finding);
 });
 
-// ---- Auxiliary: health + list endpoints (not counted against the 12) ----
+// ---- PATCH /jobs/:id — update job fields (status, routing_class, etc.) ----
+router.patch('/jobs/:id', (req, res) => {
+  const job = readJson(DIRS.jobs, req.params.id);
+  if (!job) return res.status(404).json({ error: 'job not found' });
+  const allowed = ['status', 'routing_class', 'routing_plan_id'];
+  for (const key of allowed) {
+    if (req.body[key] !== undefined) job[key] = req.body[key];
+  }
+  job.updated_at = nowIso();
+  writeJson(DIRS.jobs, job.id, job);
+  res.json(job);
+});
+
+// ---- GET /work_packages/:id — read a single work package ----
+router.get('/work_packages/:id', (req, res) => {
+  const wp = readJson(DIRS.work_packages, req.params.id);
+  if (!wp) return res.status(404).json({ error: 'work package not found' });
+  res.json(wp);
+});
+
+// ---- POST /wake-zeus — event-driven job handler trigger ----
+router.post('/wake-zeus', (req, res) => {
+  const { job_id, prompt, chat_id } = req.body ?? {};
+  if (!job_id) return res.status(400).json({ error: 'job_id required' });
+  // Respond immediately — handler runs async
+  res.json({ status: 'zeus_waking', job_id });
+  // Fire and forget
+  executeJob({ job_id, prompt, chat_id }).catch((err) => {
+    console.error('[wake-zeus] handler error:', err.message);
+  });
+});
+
+// ---- Auxiliary: health + list endpoints ----
 router.get('/health', (req, res) => {
   res.json({ ok: true, module: 'flywheel', primitives: Object.keys(DIRS), now: nowIso() });
 });
