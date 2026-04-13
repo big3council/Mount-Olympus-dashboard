@@ -25,8 +25,7 @@ function getRoutingContext() {
   if (!kb) return '';
   return kb.quorum_members.map(m =>
     m.id + ' (' + m.council + '): ' + m.domain + ' — ' + m.strengths
-  ).join('
-');
+  ).join('\n');
 }
 
 function writeFinding(jobId, title, routingClass, synthesis) {
@@ -67,8 +66,7 @@ function getRecentFindings(limit = 5) {
         const d = JSON.parse(fs.readFileSync(f.path, 'utf8'));
         return d.title + ' (' + d.routing_class + '): ' + (d.synthesis || '').slice(0, 200);
       } catch { return ''; }
-    }).filter(Boolean).join('
-');
+    }).filter(Boolean).join('\n');
   } catch { return ''; }
 }
 
