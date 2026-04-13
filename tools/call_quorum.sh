@@ -22,7 +22,7 @@ case "$AGENT_LOWER" in
   *) echo "ERROR: Unknown agent: $AGENT"; exit 1 ;;
 esac
 
-TOKEN="b67accb237fdc708bc216bcf283ae3948ed84c3b5d9fc673"
+TOKEN="${QUORUM_TOKEN:?QUORUM_TOKEN not set}"
 URL="http://${IP}:18789/v1/chat/completions"
 
 ESCAPED_MSG=$(python3 -c "import json,sys; print(json.dumps(sys.argv[1]))" "$MESSAGE")
