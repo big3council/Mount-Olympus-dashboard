@@ -7,8 +7,13 @@
  *
  * Shared channels (war_room, growth_grid) write results to BOTH projects
  * AND deliver to the corresponding Telegram group channel.
+ *
+ * Forge channel creates flywheel jobs with callback metadata. When the
+ * flywheel pipeline completes, zeus-handler POSTs to /comms/callback
+ * and the result is written back to the originating mo_comms row.
  */
 
+import express from 'express';
 import { createClient } from '@supabase/supabase-js';
 import { callZeus, callPoseidon, callHades, callGaia } from './agentCalls.js';
 
@@ -43,7 +48,6 @@ async function sendTelegramGroup(channel, from_agent, result) {
   const prefix = `[${from_agent} → ${groupCfg.label}]`;
   const text = `${prefix}\n\n${result}`;
 
-  // Telegram max message length is 4096 chars — chunk if needed
   const chunks = [];
   for (let i = 0; i < text.length; i += 4000) {
     chunks.push(text.slice(i, i + 4000));
@@ -74,14 +78,11 @@ const CHANNEL_ROUTES = {
   hades:    { call: callHades,    label: 'Hades (192.168.1.13:18789)' },
   gaia:     { call: callGaia,     label: 'Gaia (192.168.1.14:18789)' },
   zeus:     { call: callZeus,     label: 'Zeus (localhost:18789)' },
-  // war_room routes to Zeus, growth_grid routes to Gaia — both are shared channels
   war_room:     { call: callZeus, label: 'Zeus (localhost:18789)', shared: true },
   growth_grid:  { call: callGaia, label: 'Gaia (192.168.1.14:18789)', shared: true },
 };
 
 // ── Agent context wrapper ─────────────────────────────────────────────────────
-// Wraps the raw body with sender identity so agents know who is asking
-// and that the message is authorized through the comms bridge.
 
 function wrapWithContext(from_agent, channel, body) {
   return [
@@ -95,26 +96,60 @@ function wrapWithContext(from_agent, channel, body) {
 
 // ── Supabase row helpers ──────────────────────────────────────────────────────
 
+function getClient(project) {
+  if (project === 'tyler') return tylerClient;
+  return carsonClient;
+}
+
 async function updateRow(client, id, updates) {
   const { error } = await client.from('mo_comms').update(updates).eq('id', id);
   if (error) log('updateRow error:', error.message);
 }
 
+// ── Comms callback router ─────────────────────────────────────────────────────
+// Mounted at /comms by server.js. Called by zeus-handler.js when a forge job
+// completes. Writes the synthesis result back to the originating mo_comms row.
+
+export const commsCallbackRouter = express.Router();
+
+commsCallbackRouter.post('/callback', async (req, res) => {
+  const { comms_id, project, result, error: errorMsg } = req.body ?? {};
+
+  if (!comms_id || !project) {
+    return res.status(400).json({ error: 'comms_id and project required' });
+  }
+
+  const client = getClient(project);
+  if (!client) {
+    return res.status(400).json({ error: `no Supabase client for project ${project}` });
+  }
+
+  if (errorMsg) {
+    await updateRow(client, comms_id, { status: 'failed', error: errorMsg });
+    log(`Forge callback FAILED for ${comms_id}: ${errorMsg}`);
+  } else {
+    await updateRow(client, comms_id, {
+      status: 'delivered',
+      result,
+      delivered_at: new Date().toISOString(),
+    });
+    log(`Forge callback delivered for ${comms_id} (${(result || '').length} chars)`);
+  }
+
+  res.json({ ok: true });
+});
+
 // ── Forge channel — create flywheel job + wake Zeus ───────────────────────────
-// NOTE: Forge does NOT pass chat_id to wake-zeus. The flywheel pipeline
-// (zeus-handler.js) will skip Telegram delivery when chat_id is absent.
-// This prevents duplicate delivery — the bridge writes the result to mo_comms
-// and the flywheel handles its own delivery if chat_id was provided.
 
 async function handleForge(client, projectLabel, row) {
   const { id, body, from_agent } = row;
   log(`Forge job from ${from_agent}: ${body.slice(0, 50)}`);
 
   try {
-    // Mark processing
+    // Mark processing — stays processing until flywheel completes and calls back
     await updateRow(client, id, { status: 'processing', picked_up_at: new Date().toISOString() });
 
-    // Create flywheel job
+    // Create flywheel job WITH callback metadata
     const jobResp = await fetch(`${FLYWHEEL_URL}/jobs`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -123,6 +158,11 @@ async function handleForge(client, projectLabel, row) {
         description: body,
         submitter: from_agent,
         routing_class: 'pending_classification',
+        callback: {
+          type: 'mo_comms',
+          comms_id: id,
+          project: projectLabel.toLowerCase(),
+        },
       }),
     });
 
@@ -132,22 +172,18 @@ async function handleForge(client, projectLabel, row) {
     }
 
     const job = await jobResp.json();
-    log('Forge job created:', job.id);
+    log(`Forge job created: ${job.id} (callback → ${id})`);
 
     // Wake Zeus — NO chat_id to prevent duplicate Telegram delivery.
-    // Flywheel result will be available via job status; bridge writes to mo_comms.
+    // The callback metadata is in the job file; zeus-handler reads it on delivery.
     fetch(`${FLYWHEEL_URL}/wake-zeus`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: job.id, prompt: body }),
+      body: JSON.stringify({ job_id: job.id, prompt: wrapWithContext(from_agent, 'forge', body) }),
     }).catch(err => log('wake-zeus error:', err.message));
 
-    // Mark delivered with job reference
-    await updateRow(client, id, {
-      status: 'delivered',
-      result: `Flywheel job created: ${job.id}`,
-      delivered_at: new Date().toISOString(),
-    });
+    // Do NOT mark delivered here — the row stays 'processing' until the
+    // flywheel pipeline completes and zeus-handler POSTs to /comms/callback.
 
   } catch (err) {
     log('Forge error:', err.message);
@@ -162,7 +198,6 @@ async function handleMessage(client, projectLabel, row) {
 
   log(`Incoming: ${from_agent} → ${channel}: ${body.slice(0, 50)}`);
 
-  // Forge gets special handling
   if (channel === 'forge') {
     return handleForge(client, projectLabel, row);
   }
@@ -175,16 +210,13 @@ async function handleMessage(client, projectLabel, row) {
   }
 
   try {
-    // Mark processing
     await updateRow(client, id, { status: 'processing', picked_up_at: new Date().toISOString() });
     log(`Routed to ${route.label}`);
 
-    // Call the agent with context-wrapped message
     const wrappedBody = wrapWithContext(from_agent, channel, body);
     const result = await route.call(wrappedBody);
     log(`Result from ${channel} (${result.length} chars)`);
 
-    // Mark delivered on source project
     await updateRow(client, id, {
       status: 'delivered',
       result,
@@ -192,12 +224,9 @@ async function handleMessage(client, projectLabel, row) {
     });
     log(`Delivered result to ${projectLabel} project`);
 
-    // Shared channel logic — write to OTHER project + deliver to Telegram group
     if (route.shared) {
-      // Telegram group delivery
       await sendTelegramGroup(channel, from_agent, result);
 
-      // Write to the other Supabase project
       const otherClient = client === carsonClient ? tylerClient : carsonClient;
       const otherLabel = client === carsonClient ? 'Tyler' : 'Carson';
 
@@ -241,7 +270,7 @@ function subscribeToProject(client, projectLabel) {
       },
       (payload) => {
         const row = payload.new;
-        if (row.status !== 'pending') return; // only process pending
+        if (row.status !== 'pending') return;
         handleMessage(client, projectLabel, row).catch(err => {
           log(`Unhandled error (${projectLabel}):`, err.message);
         });

@@ -31,6 +31,29 @@ const COUNCIL_ENDPOINTS = {
 const log = (...args) => console.log('[zeus-handler]', new Date().toISOString(), ...args);
 
 // ---------------------------------------------------------------------------
+// mo_comms callback — writes flywheel result back to the originating mo_comms row
+// ---------------------------------------------------------------------------
+const COMMS_CALLBACK_URL = "http://127.0.0.1:18780/comms/callback";
+
+async function commsCallback(job, result, errorMsg = null) {
+  if (!job.callback || job.callback.type !== "mo_comms") return;
+  try {
+    const body = errorMsg
+      ? { comms_id: job.callback.comms_id, project: job.callback.project, error: errorMsg }
+      : { comms_id: job.callback.comms_id, project: job.callback.project, result };
+    const resp = await fetch(COMMS_CALLBACK_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) log("comms callback error:", resp.status);
+    else log("comms callback delivered for", job.callback.comms_id);
+  } catch (e) {
+    log("comms callback failed:", e.message);
+  }
+}
+
+// ---------------------------------------------------------------------------
 // OpenClaw chat call (OpenAI-compatible)
 // ---------------------------------------------------------------------------
 async function openclawCall(endpoint, systemPrompt, userMessage, sessionKey, token) {
@@ -208,6 +231,7 @@ export async function executeJob({ job_id, prompt, chat_id }) {
 
       await patchJob(job_id, { status: 'delivered' });
       await sendTelegram(chat_id, response);
+      await commsCallback(job, response);
       log('=== TRIVIAL JOB DELIVERED ===');
       return;
     }
@@ -276,6 +300,7 @@ export async function executeJob({ job_id, prompt, chat_id }) {
 
     if (wpIds.length === 0) {
       log('no work packages created — delivering assessment directly');
+      await commsCallback(job, classification.zeus_assessment || prompt);
       await patchJob(job_id, { status: 'delivered' });
       await sendTelegram(chat_id, `[Zeus assessment]\n\n${classification.zeus_assessment}`);
       return;
@@ -356,6 +381,7 @@ Return a focused, concise response.`,
     // E5: Guard against 0 returns — all dispatches failed
     if (returns.length === 0) {
       log('ALL dispatches failed — no returns to synthesize. Delivering assessment.');
+      await commsCallback(job, classification.zeus_assessment || prompt);
       await patchJob(job_id, { status: 'delivered' });
       await sendTelegram(chat_id, `[Zeus] All quorum dispatches failed. Assessment:
 
@@ -390,6 +416,7 @@ ${classification.zeus_assessment || prompt}`);
     // E6: Deliver
     await patchJob(job_id, { status: 'delivered' });
     await sendTelegram(chat_id, synthesis);
+    await commsCallback(job, synthesis);
     log('=== JOB DELIVERED ===', job_id);
 
   } catch (e) {
@@ -397,5 +424,6 @@ ${classification.zeus_assessment || prompt}`);
     log(e.stack);
     try { await patchJob(job_id, { status: 'failed' }); } catch {}
     try { await sendTelegram(chat_id, `Job failed: ${e.message}`); } catch {}
+    try { await commsCallback(job, null, e.message); } catch {}
   }
 }

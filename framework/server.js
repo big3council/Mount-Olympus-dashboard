@@ -21,7 +21,7 @@ import { initPeerLayer, getPeerStatus, getPresence } from "./council-peer.js";
 import dashboardRoutes from "./dashboard-routes.js";
 import logoRoute from "./agent-logo-route.js";
 import flywheelRouter from "./flywheel/flywheel.js";
-import { initCommsBridge } from "./comms-bridge.js";
+import { initCommsBridge, commsCallbackRouter } from "./comms-bridge.js";
 
 const PORT = 18780;
 
@@ -534,6 +534,7 @@ app.use(logoRoute);
 
 // ── Flywheel backend (additive — 12 API endpoints, file-backed primitives) ──
 app.use('/flywheel', flywheelRouter);
+app.use('/comms', commsCallbackRouter);
 
 // ── HTTP + WebSocket server ───────────────────────────────────────────────────
 const server = http.createServer(app);

@@ -69,7 +69,7 @@ const router = express.Router();
 
 // ---- 1. POST /jobs -------------------------------------------------------
 router.post('/jobs', (req, res) => {
-  const { title, description, submitter, routing_class = 'standard' } = req.body || {};
+  const { title, description, submitter, routing_class = 'standard', callback = null } = req.body || {};
   if (!title || !submitter) {
     return res.status(400).json({ error: 'title and submitter required' });
   }
@@ -87,6 +87,7 @@ router.post('/jobs', (req, res) => {
     status: 'submitted',
     routing_plan_id: null,
     work_package_ids: [],
+    callback: callback || null,
     created_at: nowIso(),
     updated_at: nowIso(),
   };
