@@ -23,6 +23,18 @@ if (!TOKEN) {
 const bot = new TelegramBot(TOKEN, { polling: true });
 const log = (...args) => console.log('[build-bot]', new Date().toISOString(), ...args);
 
+// Auth gate — set BUILD_BOT_USERS in .env as comma-separated usernames or IDs
+const ALLOWED_USERS = (process.env.BUILD_BOT_USERS || '')
+  .split(',')
+  .map(s => s.trim().toLowerCase())
+  .filter(Boolean);
+
+if (ALLOWED_USERS.length === 0) {
+  log('WARNING: BUILD_BOT_USERS not set — accepting all senders (set BUILD_BOT_USERS in .env to restrict)');
+} else {
+  log('auth gate active — allowed users:', ALLOWED_USERS.join(', '));
+}
+
 log('started — polling Telegram, flywheel =', FLYWHEEL_URL);
 
 // ---------------------------------------------------------------------------
@@ -35,6 +47,17 @@ bot.on('message', async (msg) => {
 
   const sender = msg.from?.username || String(msg.from?.id || 'unknown');
   log(`msg from ${sender} (chat ${chatId}): ${text.slice(0, 120)}`);
+
+  // Enforce auth gate if BUILD_BOT_USERS is configured
+  if (ALLOWED_USERS.length > 0) {
+    const senderLower = sender.toLowerCase();
+    const senderId = String(msg.from?.id || '');
+    if (!ALLOWED_USERS.includes(senderLower) && !ALLOWED_USERS.includes(senderId)) {
+      log(`BLOCKED: ${sender} (id: ${senderId}) not in BUILD_BOT_USERS`);
+      await bot.sendMessage(chatId, 'Access denied. Contact the admin to be added to BUILD_BOT_USERS.');
+      return;
+    }
+  }
 
   // First line = title, rest = description
   const lines = text.split('\n');

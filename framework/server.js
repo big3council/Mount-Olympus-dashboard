@@ -76,7 +76,7 @@ loadMissions();
 loadGaiaConvs();
 
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: "2mb" }));
 
 // ── Serve dashboard from dist ─────────────────────────────────────────────────
 app.use(express.static(new URL("../dashboard/dist", import.meta.url).pathname));

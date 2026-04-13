@@ -534,12 +534,15 @@ function connectToPeer(peerId) {
 
   const ws = new WebSocket(url);
   let retryDelay = 2000;
+  let connectedAt = 0;
 
   ws.on('open', () => {
     log(`Connected to ${peerId} via ${via}`);
     peerConnections[peerId] = ws;
     peerStatus[peerId] = 'connected';
-    retryDelay = 2000;
+    connectedAt = Date.now();
+    // Only reset backoff if connection was previously stable (>30s)
+    // Otherwise keep current delay to prevent rapid cycling
 
     // Announce ourselves
     ws.send(buildMessage(peerId, 'ack', `${NODE_ID} peer connection established`));
@@ -555,9 +558,12 @@ function connectToPeer(peerId) {
   });
 
   ws.on('close', () => {
-    log(`Disconnected from ${peerId}`);
+    const uptime = connectedAt ? Date.now() - connectedAt : 0;
+    log(`Disconnected from ${peerId} (was up ${Math.round(uptime / 1000)}s)`);
     peerStatus[peerId] = 'disconnected';
     delete peerConnections[peerId];
+    // Reset backoff only if connection was stable for >30s
+    if (uptime > 30000) retryDelay = 2000;
     // Reconnect with backoff
     setTimeout(() => connectToPeer(peerId), Math.min(retryDelay, 30000));
     retryDelay = Math.min(retryDelay * 1.5, 30000);

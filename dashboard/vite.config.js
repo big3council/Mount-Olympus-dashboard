@@ -29,7 +29,7 @@ export default defineConfig({
   preview: {
     host: '0.0.0.0',
     port: 3000,
-    strictPort: true,
+    strictPort: false,
     proxy: {
       '/projects': {
         target: 'http://localhost:18780',
