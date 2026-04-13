@@ -3,6 +3,7 @@ import { readFileSync } from 'fs';
 import { callZeus, callPoseidon, callHades, callAgent } from './gateway.js';
 import { classifyJob } from './classifier.js';
 import { observeMission } from './gaia.js';
+import { updateMission, writeFinding } from './mission-store.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
 // 2-tier system: T1 (Smart Solo) routes to one agent, T2 (Full Deliberative)
@@ -107,6 +108,7 @@ function deliverableContext(deliverables, failures) {
 async function runTier1(requestId, userInput, channel, userId = null) {
   const start = Date.now();
   console.log(`[B3C] Tier 1 mission ${requestId}`);
+  updateMission(requestId, { id: requestId, status: 'executing', tier: 'TIER_1', agent: 'zeus', text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
 
   broadcast({ type: 'stage_change',  id: requestId, stage: 'execution' });
   broadcast({ type: 'agent_thought', id: requestId, agent: 'zeus', text: 'Processing...' });
@@ -130,12 +132,16 @@ async function runTier1(requestId, userInput, channel, userId = null) {
     });
   } catch {}
 
+  updateMission(requestId, { status: 'delivered', elapsed, output: response.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'TIER_1', 'zeus', response);
+
   console.log(`[B3C] Tier 1 complete in ${(elapsed / 1000).toFixed(1)}s`);
   return response;
 }
 
 // ── Tier 2 — Focused three-domain execution ───────────────────────────────────
 async function runTier2(requestId, userInput, channel, userId = null) {
+  updateMission(requestId, { id: requestId, status: 'council_initial', tier: 'TIER_2', text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
   const start = Date.now();
   console.log(`[B3C] Tier 2 mission ${requestId}`);
   const t2CouncilInitial = [];
@@ -202,9 +208,11 @@ Assign tasks for:
   if (poseidonWork) broadcast({ type: 'task_assigned', id: requestId, agent: 'poseidon', task: poseidonWork });
   if (hadesWork)    broadcast({ type: 'task_assigned', id: requestId, agent: 'hades',    task: hadesWork });
   console.log(`[B3C] Tier 2: ${3 - failures.length}/3 deliverables complete`);
+  updateMission(requestId, { status: 'executing', deliverables: { zeus: !!zeusWork, poseidon: !!poseidonWork, hades: !!hadesWork }, failures });
 
   // ── Single review pass ────────────────────────────────────────────────────
   broadcast({ type: 'stage_change', id: requestId, stage: 'council_backend' });
+  updateMission(requestId, { status: 'backend_council' });
 
   const reviewCtx = `USER REQUEST: ${userInput}\n\nZEUS: ${zeusWork || '[UNAVAILABLE]'}\n\nPOSEIDON: ${poseidonWork || '[UNAVAILABLE]'}\n\nHADES: ${hadesWork || '[UNAVAILABLE]'}`;
 
@@ -261,6 +269,9 @@ Weave the available layers together seamlessly. This is the council's delivered 
     });
   } catch {}
 
+  updateMission(requestId, { status: 'delivered', elapsed: t2Elapsed, output: synthesis.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'TIER_2', 'council', synthesis);
+
   console.log(`[B3C] Tier 2 complete in ${(t2Elapsed / 1000).toFixed(1)}s`);
   return synthesis;
 }
@@ -269,6 +280,7 @@ Weave the available layers together seamlessly. This is the council's delivered 
 async function runTier3(requestId, userInput, channel, userId = null) {
   const start = Date.now();
   console.log(`[B3C] Tier 3 mission ${requestId}`);
+  updateMission(requestId, { id: requestId, status: 'council_initial', tier: 'T2', text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
   const t3CouncilInitial = [];
   const t3CouncilBackend = [];
 
@@ -397,6 +409,7 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
   // ── Parallel execution ────────────────────────────────────────────────────
   broadcast({ type: 'stage_change', id: requestId, stage: 'execution' });
   console.log('[B3C] Execution phase');
+  updateMission(requestId, { status: 'executing' });
 
   broadcast({ type: 'agent_thought', id: requestId, agent: 'zeus',     text: 'Producing Spiritual/Intellectual deliverable...' });
   broadcast({ type: 'agent_thought', id: requestId, agent: 'poseidon', text: 'Producing Financial/Social deliverable...' });
@@ -435,6 +448,7 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
 
   // ── Backend council ───────────────────────────────────────────────────────
   broadcast({ type: 'stage_change', id: requestId, stage: 'council_backend' });
+  updateMission(requestId, { status: 'backend_council' });
   console.log('[B3C] Backend council');
 
   let pool = { zeus: zeusWork, poseidon: poseidonWork, hades: hadesWork };
@@ -609,6 +623,9 @@ Synthesize all available domain deliverables into a single coherent, integrated 
     });
   } catch {}
 
+  updateMission(requestId, { status: 'delivered', elapsed: t3Elapsed, output: finalOutput.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'T2', 'council', finalOutput);
+
   console.log(`[B3C] Tier 3 mission ${requestId} complete in ${(t3Elapsed / 1000).toFixed(1)}s`);
   return finalOutput;
 }
@@ -617,6 +634,8 @@ Synthesize all available domain deliverables into a single coherent, integrated 
 async function runT1Solo(requestId, userInput, channel, agent, userId = null) {
   const start = Date.now();
   console.log(`[B3C] T1 Smart Solo: ${agent} handling ${requestId}`);
+
+  updateMission(requestId, { id: requestId, status: 'executing', tier: 'T1', agent, text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
 
   broadcast({ type: 'stage_change', id: requestId, stage: 'execution' });
   broadcast({ type: 'agent_thought', id: requestId, agent, text: 'Processing...' });
@@ -640,6 +659,9 @@ async function runT1Solo(requestId, userInput, channel, agent, userId = null) {
       deliverables: { [agent]: response }, failures: [], output: response, elapsed,
     });
   } catch {}
+
+  updateMission(requestId, { status: 'delivered', elapsed, output: response.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'T1', agent, response);
 
   console.log(`[B3C] T1 Solo (${agent}) complete in ${(elapsed / 1000).toFixed(1)}s`);
   return response;
@@ -668,6 +690,7 @@ export async function runB3C(requestId, userInput, channel, preTier = null, user
     const dashTier = tier === 'T1' ? 'TIER_1' : 'TIER_3';
     broadcast({ type: 'tier_classified', id: requestId, tier: dashTier });
     console.log(`[B3C] ${requestId} classified as ${tier}${agent ? ' → ' + agent : ''} in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+    updateMission(requestId, { id: requestId, status: 'classified', tier, agent, text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
   }
 
   if (tier === 'T1' && agent) return runT1Solo(requestId, userInput, channel, agent, userId);
