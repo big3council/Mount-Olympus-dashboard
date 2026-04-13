@@ -13,6 +13,65 @@ const __dirname = path.dirname(__filename);
 
 const FLYWHEEL_URL  = 'http://127.0.0.1:18780/flywheel';
 const ZEUS_OPENCLAW = 'http://127.0.0.1:18789/v1/chat/completions';
+
+// ── Routing Knowledge Base ────────────────────────────────────────────────────
+const ROUTING_KB_PATH = '/Volumes/olympus/pool/routing/quorum-knowledge.json';
+const FINDINGS_DIR = '/Volumes/olympus/pool/findings';
+function loadRoutingKB() {
+  try { return JSON.parse(fs.readFileSync(ROUTING_KB_PATH, 'utf8')); } catch { return null; }
+}
+function getRoutingContext() {
+  const kb = loadRoutingKB();
+  if (!kb) return '';
+  return kb.quorum_members.map(m =>
+    m.id + ' (' + m.council + '): ' + m.domain + ' — ' + m.strengths
+  ).join('
+');
+}
+
+function writeFinding(jobId, title, routingClass, synthesis) {
+  try {
+    fs.mkdirSync(FINDINGS_DIR, { recursive: true });
+    const finding = {
+      job_id: jobId,
+      title,
+      routing_class: routingClass,
+      synthesis: synthesis.slice(0, 2000),
+      created_at: new Date().toISOString(),
+    };
+    fs.writeFileSync(
+      path.join(FINDINGS_DIR, jobId + '.json'),
+      JSON.stringify(finding, null, 2)
+    );
+    log('finding saved:', jobId);
+  } catch (e) {
+    log('finding write error:', e.message);
+  }
+}
+
+function getRecentFindings(limit = 5) {
+  try {
+    if (!fs.existsSync(FINDINGS_DIR)) return '';
+    const files = fs.readdirSync(FINDINGS_DIR)
+      .filter(f => f.endsWith('.json'))
+      .map(f => {
+        const fp = path.join(FINDINGS_DIR, f);
+        const stat = fs.statSync(fp);
+        return { path: fp, mtime: stat.mtimeMs };
+      })
+      .sort((a, b) => b.mtime - a.mtime)
+      .slice(0, limit);
+    if (files.length === 0) return '';
+    return files.map(f => {
+      try {
+        const d = JSON.parse(fs.readFileSync(f.path, 'utf8'));
+        return d.title + ' (' + d.routing_class + '): ' + (d.synthesis || '').slice(0, 200);
+      } catch { return ''; }
+    }).filter(Boolean).join('
+');
+  } catch { return ''; }
+}
+
 const BOT_TOKEN     = process.env.BUILD_BOT_TOKEN || '';
 
 // Each gateway has its own auth token — loaded from .env.
@@ -153,6 +212,12 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       [
         'Classify this build job and write a routing plan.',
         '',
+        'Available quorum members and their domains:',
+        getRoutingContext(),
+        '',
+        'Recent findings from past jobs (for context):',
+        getRecentFindings(),
+        '',
         `Job: ${prompt}`,
         '',
         'routing_class:',
@@ -208,6 +273,7 @@ export async function executeJob({ job_id, prompt, chat_id }) {
 
       await patchJob(job_id, { status: 'delivered' });
       await sendTelegram(chat_id, response);
+      writeFinding(job_id, job.title, 'trivial', response);
       log('=== TRIVIAL JOB DELIVERED ===');
       return;
     }
@@ -390,6 +456,7 @@ ${classification.zeus_assessment || prompt}`);
     // E6: Deliver
     await patchJob(job_id, { status: 'delivered' });
     await sendTelegram(chat_id, synthesis);
+    writeFinding(job_id, job.title, routingClass, synthesis);
     log('=== JOB DELIVERED ===', job_id);
 
   } catch (e) {
