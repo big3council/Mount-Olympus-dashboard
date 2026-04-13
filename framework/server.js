@@ -21,6 +21,7 @@ import { initPeerLayer, getPeerStatus, getPresence } from "./council-peer.js";
 import dashboardRoutes from "./dashboard-routes.js";
 import logoRoute from "./agent-logo-route.js";
 import flywheelRouter from "./flywheel/flywheel.js";
+import { initCommsBridge } from "./comms-bridge.js";
 
 const PORT = 18780;
 
@@ -545,6 +546,7 @@ server.listen(PORT, () => {
   initGaiaPoller();
   initGaia();
   initPeerLayer();
+  initCommsBridge();
 });
 
 // ── Graceful shutdown ─────────────────────────────────────────────────────────
