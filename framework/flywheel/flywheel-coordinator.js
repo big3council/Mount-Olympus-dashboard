@@ -15,6 +15,7 @@ const ROOT = __dirname;
 const DIRS = {
   work_packages:       path.join(ROOT, 'work_packages'),
   dependency_requests: path.join(ROOT, 'dependency_requests'),
+  routing_plans:       path.join(ROOT, 'routing_plans'),
 };
 
 // Tuneables
@@ -82,8 +83,22 @@ function tick() {
     }
   }
 
-  if (expired_wp || expired_dep) {
-    log(`tick: expired ${expired_wp} work packages, ${expired_dep} dependency requests`);
+  // Routing plans stuck in proposed for >20 min
+  let expired_plans = 0;
+  for (const plan of readAllJson(DIRS.routing_plans)) {
+    if (plan.status === 'proposed') {
+      const age = now - new Date(plan.created_at).getTime();
+      if (age > 20 * 60 * 1000) {
+        plan.status = 'timed_out';
+        plan.updated_at = new Date().toISOString();
+        writeJson(DIRS.routing_plans, plan.id, plan);
+        expired_plans++;
+      }
+    }
+  }
+
+  if (expired_wp || expired_dep || expired_plans) {
+    log(`tick: expired ${expired_wp} WP, ${expired_dep} dep req, ${expired_plans} routing plans`);
   }
 }
 

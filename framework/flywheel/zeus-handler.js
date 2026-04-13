@@ -141,7 +141,13 @@ export async function executeJob({ job_id, prompt, chat_id }) {
 
     // ── STEP B: Zeus classifies ───────────────────────────────────────────────
     log('classifying via Zeus OpenClaw...');
-    const classifyResponse = await openclawCall(
+    const classifyTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('classification timeout')), 15000)
+    );
+    let classifyResponse;
+    try {
+      classifyResponse = await Promise.race([
+        openclawCall(
       ZEUS_OPENCLAW,
       'You are Zeus, orchestrator of the B3C council.',
       [
@@ -163,7 +169,13 @@ export async function executeJob({ job_id, prompt, chat_id }) {
         '}',
       ].join('\n'),
       `zeus-classify-${job_id.slice(-8)}-${Date.now()}`
-    );
+    ),
+        classifyTimeout,
+      ]);
+    } catch (e) {
+      log('classification timed out or failed:', e.message, '— defaulting to standard');
+      classifyResponse = '';
+    }
 
     log('classification raw:', classifyResponse.slice(0, 300));
 
@@ -313,13 +325,17 @@ export async function executeJob({ job_id, prompt, chat_id }) {
           return { assignee, result: fallback };
         }
 
-        log('dispatching to', assignee);
+        // Use per-node token for council heads, shared quorum token for sparks
+        const dispatchToken = TOKENS[assignee] || TOKENS.quorum;
+        log("dispatching to", assignee, "(token:", assignee in TOKENS ? "per-node" : "quorum", ")");
         const result = await openclawCall(
           endpoint,
-          'You have a work package from the B3C council. Keep response under 1500 characters.',
-          `Brief: ${brief}\n\nReturn a focused, concise response.`,
+          "You have a work package from the B3C council. Keep response under 1500 characters.",
+          `Brief: ${brief}
+
+Return a focused, concise response.`,
           `zeus-dispatch-${assignee}-${Date.now()}`,
-          TOKENS.quorum
+          dispatchToken
         );
         log(assignee, 'returned:', result.slice(0, 150));
 
@@ -336,6 +352,16 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       .map((r) => r.value);
     const dispatchErrors = dispatchResults.filter((r) => r.status === 'rejected');
     if (dispatchErrors.length) log('dispatch failures:', dispatchErrors.length);
+
+    // E5: Guard against 0 returns — all dispatches failed
+    if (returns.length === 0) {
+      log('ALL dispatches failed — no returns to synthesize. Delivering assessment.');
+      await patchJob(job_id, { status: 'delivered' });
+      await sendTelegram(chat_id, `[Zeus] All quorum dispatches failed. Assessment:
+
+${classification.zeus_assessment || prompt}`);
+      return;
+    }
 
     // E5: Zeus synthesizes all returns
     log('synthesizing', returns.length, 'returns');
