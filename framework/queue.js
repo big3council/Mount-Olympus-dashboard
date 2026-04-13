@@ -13,7 +13,8 @@
 
 import { broadcast, subscribe, unsubscribe } from './olympus-ws.js';
 import { killAll, cleanup } from './processTracker.js';
-import { classifyRequest, runB3C } from './b3c.js';
+import { runB3C } from './b3c.js';
+import { classifyJob } from './classifier.js';
 import { runDirect } from './direct.js';
 import { runDirectGaia } from './gaia.js';
 import { callZeus } from './gateway.js';
@@ -41,20 +42,20 @@ function runningCount(tier) {
   return n;
 }
 
-// Count of TIER_2 + TIER_3 missions currently running (share one council slot)
+// Count of T2/TIER_2/TIER_3 missions currently running (share one council slot)
 function councilRunningCount() {
   let n = 0;
   for (const [, entry] of running) {
     const t = effectiveTier(entry.mission);
-    if (t === 'TIER_2' || t === 'TIER_3') n++;
+    if (t === 'T2' || t === 'TIER_2' || t === 'TIER_3') n++;
   }
   return n;
 }
 
 function hasOpenSlot(tier) {
-  if (tier === 'TIER_1') return true;                          // always instant
+  if (tier === 'T1' || tier === 'TIER_1') return true;        // always instant
   if (tier === 'DIRECT') return runningCount('DIRECT') < DIRECT_LIMIT;
-  return councilRunningCount() < COUNCIL_LIMIT;               // TIER_2 + TIER_3 share
+  return councilRunningCount() < COUNCIL_LIMIT;               // T2/TIER_2/TIER_3 share
 }
 
 // Find index of next pending mission that has an open slot.
@@ -195,7 +196,7 @@ function releaseSlot(id) {
 }
 
 function startMission(mission) {
-  const { id, tier, target, text, channel, userId, messages } = mission;
+  const { id, tier, target, text, channel, userId, messages, agent } = mission;
 
   running.set(id, { mission });
   broadcastQueue();
@@ -221,8 +222,8 @@ function startMission(mission) {
     const stripped = text.replace(/^ZEUS PROTOCOL[:\s]*/i, '').trim();
     promise = runDirect('zeus', id, stripped, channel, userId ?? null);
   } else {
-    // B3C — pass pre-classified tier to skip re-classification
-    promise = runB3C(id, text, channel, tier, userId ?? null);
+    // B3C — pass pre-classified tier + agent to skip re-classification
+    promise = runB3C(id, text, channel, tier, userId ?? null, agent);
   }
 
   // Error fallback: if the pipeline throws before emitting request_complete
@@ -274,23 +275,29 @@ export async function enqueue(mission) {
     target === 'poseidon' || target === 'hades' || target === 'gaia' ||
     text.toUpperCase().startsWith('ZEUS PROTOCOL');
 
+  let agent = null;
+
   if (isDirect) {
     tier = 'DIRECT';
   } else {
-    // B3C: pre-classify so queue slot is accurate
+    // B3C: 2-tier classification via Haiku
     try {
-      tier = await classifyRequest(text);
+      const classification = await classifyJob(text);
+      tier = classification.tier;   // 'T1' or 'T2'
+      agent = classification.agent; // 'zeus', 'poseidon', 'hades', or null
     } catch {
-      tier = 'TIER_3';
+      tier = 'T2';
     }
     // Bail if cancelled during classification
     if (cancelledIds.has(id)) return;
-    broadcast({ type: 'tier_classified', id, tier });
-    console.log(`[Queue] ${id} classified as ${tier}`);
+    // Map to legacy tier name for dashboard
+    const dashTier = tier === 'T1' ? 'TIER_1' : 'TIER_3';
+    broadcast({ type: 'tier_classified', id, tier: dashTier });
+    console.log(`[Queue] ${id} classified as ${tier}${agent ? ' → ' + agent : ''}`);
   }
 
   const entry = {
-    id, tier, text, channel, target,
+    id, tier, text, channel, target, agent,
     userId:    userId ?? null,
     isWarRoom: isWarRoom ?? false,
     priority:  priority ?? false,
@@ -298,8 +305,8 @@ export async function enqueue(mission) {
     timestamp: Date.now(),
   };
 
-  // ── TIER_1: always runs immediately, no queue, no acknowledgment ──────────
-  if (tier === 'TIER_1') {
+  // ── T1: always runs immediately, no queue, no acknowledgment ──────────────
+  if (tier === 'T1') {
     startMission(entry);
     broadcastQueue();
     return;
@@ -318,11 +325,11 @@ export async function enqueue(mission) {
     return;
   }
 
-  // ── TIER_2 / TIER_3: shared council slot ──────────────────────────────────
+  // ── T2 / TIER_2 / TIER_3: shared council slot ─────────────────────────────
   // Start immediately only if the council slot is free AND no council missions
   // are already pending (fairness — don't skip the queue).
   const councilPendingCount = pending.filter(
-    m => m.tier === 'TIER_2' || m.tier === 'TIER_3'
+    m => m.tier === 'T2' || m.tier === 'TIER_2' || m.tier === 'TIER_3'
   ).length;
 
   if (councilRunningCount() < COUNCIL_LIMIT && councilPendingCount === 0) {
@@ -337,7 +344,7 @@ export async function enqueue(mission) {
   // Compute queue position and estimated wait for the acknowledgment.
   const queuePosition = councilPendingCount + 1;  // 1-indexed in council queue
   const councilAhead  = councilRunningCount() + councilPendingCount; // missions before this one
-  const avgMin        = tier === 'TIER_3' ? 8 : 3;
+  const avgMin        = (tier === 'T2' || tier === 'TIER_3') ? 8 : 3;
   const estimatedMin  = councilAhead * avgMin;
   const estimatedWait = `~${estimatedMin} min`;
   const ackText       = `Got it — you're #${queuePosition} in queue. Estimated wait: ${estimatedWait}. I'll have the council on it shortly.`;

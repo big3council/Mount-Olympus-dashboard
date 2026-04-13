@@ -1,13 +1,13 @@
 import { broadcast } from './olympus-ws.js';
 import { readFileSync } from 'fs';
-import { callZeus, callPoseidon, callHades } from './gateway.js';
+import { callZeus, callPoseidon, callHades, callAgent } from './gateway.js';
+import { classifyJob } from './classifier.js';
 import { observeMission } from './gaia.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
-// Delegates classification entirely to Zeus. He reads his CLASSIFY.md guide
-// (~/olympus/zeus/CLASSIFY.md) on every call — update that file to tune his
-// routing decisions over time. His response is trusted directly with no
-// override logic applied.
+// 2-tier system: T1 (Smart Solo) routes to one agent, T2 (Full Deliberative)
+// runs the full B3C council. Haiku API classifies via classifier.js.
+// Routing context at /Volumes/olympus/pool/routing/t1-routing-context.md.
 
 const CLASSIFY_MD_PATH = '/Users/zeus/olympus/zeus/CLASSIFY.md';
 
@@ -613,24 +613,67 @@ Synthesize all available domain deliverables into a single coherent, integrated 
   return finalOutput;
 }
 
+// ── T1 Smart Solo — single agent handles the request ─────────────────────────
+async function runT1Solo(requestId, userInput, channel, agent, userId = null) {
+  const start = Date.now();
+  console.log(`[B3C] T1 Smart Solo: ${agent} handling ${requestId}`);
+
+  broadcast({ type: 'stage_change', id: requestId, stage: 'execution' });
+  broadcast({ type: 'agent_thought', id: requestId, agent, text: 'Processing...' });
+
+  const callers = { zeus: callZeus, poseidon: callPoseidon, hades: callHades };
+  const callFn = callers[agent] || callZeus;
+
+  const response = await callFn(
+    `You are ${agent.charAt(0).toUpperCase() + agent.slice(1)}. Respond directly and personally to this message.\n\n${userInput}`,
+    requestId
+  );
+
+  const elapsed = Date.now() - start;
+  broadcast({ type: 'stage_change', id: requestId, stage: 'done' });
+  broadcast({ type: 'request_complete', id: requestId, elapsed, output: response, channel, tier: 'T1', agent, ...(userId != null ? { userId: String(userId) } : {}) });
+
+  try {
+    observeMission({
+      id: requestId, timestamp: Date.now(), userId, channel, tier: 'T1',
+      request: userInput, councilInitial: [], councilBackend: [],
+      deliverables: { [agent]: response }, failures: [], output: response, elapsed,
+    });
+  } catch {}
+
+  console.log(`[B3C] T1 Solo (${agent}) complete in ${(elapsed / 1000).toFixed(1)}s`);
+  return response;
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
-// Accepts optional preTier (from queue pre-classification) to skip re-classification.
-export async function runB3C(requestId, userInput, channel, preTier = null, userId = null) {
+// 2-tier classification: T1 (Smart Solo) or T2 (Full Deliberative).
+// Accepts optional preTier/preAgent from queue pre-classification.
+export async function runB3C(requestId, userInput, channel, preTier = null, userId = null, preAgent = null) {
   const start = Date.now();
 
   let tier = preTier;
+  let agent = preAgent;
+
   if (!tier) {
     try {
-      tier = await classifyRequest(userInput);
+      const classification = await classifyJob(userInput);
+      tier = classification.tier === 'T1' ? 'T1' : 'T2';
+      agent = classification.agent;
     } catch (err) {
-      console.error(`[B3C] Classification failed, defaulting to TIER_3:`, err.message);
-      tier = 'TIER_3';
+      console.error(`[B3C] Classification failed, defaulting to T2:`, err.message);
+      tier = 'T2';
+      agent = null;
     }
-    broadcast({ type: 'tier_classified', id: requestId, tier });
-    console.log(`[B3C] ${requestId} classified as ${tier} in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+    // Map to legacy tier names for dashboard compatibility
+    const dashTier = tier === 'T1' ? 'TIER_1' : 'TIER_3';
+    broadcast({ type: 'tier_classified', id: requestId, tier: dashTier });
+    console.log(`[B3C] ${requestId} classified as ${tier}${agent ? ' → ' + agent : ''} in ${((Date.now() - start) / 1000).toFixed(1)}s`);
   }
 
+  if (tier === 'T1' && agent) return runT1Solo(requestId, userInput, channel, agent, userId);
+  // Legacy tier support (from queue pre-classification during transition)
   if (tier === 'TIER_1') return runTier1(requestId, userInput, channel, userId);
   if (tier === 'TIER_2') return runTier2(requestId, userInput, channel, userId);
+  // T2 and TIER_3 both run the full deliberative pipeline
   return runTier3(requestId, userInput, channel, userId);
 }
