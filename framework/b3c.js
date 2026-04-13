@@ -4,6 +4,7 @@ import { callZeus, callPoseidon, callHades, callAgent } from './gateway.js';
 import { classifyJob } from './classifier.js';
 import { observeMission } from './gaia.js';
 import { updateMission, writeFinding } from './mission-store.js';
+import { runAllQuorums } from './quorum-dispatch.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
 // 2-tier system: T1 (Smart Solo) routes to one agent, T2 (Full Deliberative)
@@ -446,6 +447,37 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
   if (hadesWork)    broadcast({ type: 'task_assigned', id: requestId, agent: 'hades',    task: hadesWork });
   console.log(`[B3C] ${3 - execFailures.length}/3 deliverables complete`);
 
+  // ── Quorum dispatch ─────────────────────────────────────────────────────
+  // Each head with a deliverable runs a full quorum cycle.
+  // Heads that failed run a smoke test instead.
+  let quorumContext = '';
+  try {
+    const headScopes = {
+      zeus:     zeusWork || null,
+      poseidon: poseidonWork || null,
+      hades:    hadesWork || null,
+    };
+    updateMission(requestId, { status: 'quorum_dispatch' });
+
+    const { reports, smokeTests } = await runAllQuorums(requestId, userInput, headScopes);
+
+    // Build context string for backend council
+    const reportTexts = reports
+      .filter(r => r.synthesis)
+      .map(r => `${r.head.toUpperCase()} QUORUM REPORT:\n${r.synthesis}`)
+      .join('\n\n');
+    const smokeTexts = smokeTests
+      .map(r => `${r.head.toUpperCase()} smoke: ${r.online.length}/${r.online.length + r.offline.length} online`)
+      .join(', ');
+
+    quorumContext = reportTexts ? `\n\nQUORUM REPORTS:\n${reportTexts}` : '';
+    if (smokeTexts) quorumContext += `\n\n[Smoke tests: ${smokeTexts}]`;
+
+    console.log(`[B3C] Quorum dispatch complete — ${reports.length} reports, ${smokeTests.length} smoke tests`);
+  } catch (err) {
+    console.error('[B3C] Quorum dispatch error (non-fatal):', err.message);
+  }
+
   // ── Backend council ───────────────────────────────────────────────────────
   broadcast({ type: 'stage_change', id: requestId, stage: 'council_backend' });
   updateMission(requestId, { status: 'backend_council' });
@@ -472,8 +504,9 @@ ${pool.poseidon || '[UNAVAILABLE]'}
 
 HADES DELIVERABLE:
 ${pool.hades || '[UNAVAILABLE]'}
+${quorumContext}
 
-Read all three deliverables carefully. Assess whether together they fully answer the request. Voice your honest position to the council — what is working, what gaps exist if any.
+Read all deliverables and quorum reports carefully. Assess whether together they fully answer the request. Voice your honest position to the council — what is working, what gaps exist if any.
 
 Then cast your vote: end your response with VOTE: AYE if you believe the combined work is complete and ready, or VOTE: REVISE if something needs rework (name specifically what and by whom).`,
       requestId
@@ -497,11 +530,12 @@ ${pool.poseidon || '[UNAVAILABLE]'}
 
 HADES DELIVERABLE:
 ${pool.hades || '[UNAVAILABLE]'}
+${quorumContext}
 
 ZEUS'S POSITION:
 ${zeusPosition}
 
-Read all three deliverables. From your Financial/Social domain perspective, does the combined output fully answer the request? Voice your honest assessment.
+Read all deliverables and quorum reports. From your Financial/Social domain perspective, does the combined output fully answer the request? Voice your honest assessment.
 
 Then cast your vote: end your response with VOTE: AYE if the work is complete and ready, or VOTE: REVISE if something is missing (name specifically what and by whom).`,
         requestId
@@ -519,11 +553,12 @@ ${pool.poseidon || '[UNAVAILABLE]'}
 
 YOUR DELIVERABLE (Hades):
 ${pool.hades || '[UNAVAILABLE]'}
+${quorumContext}
 
 ZEUS'S POSITION:
 ${zeusPosition}
 
-Read all three deliverables. From your Physical/Technical domain perspective, does the combined output fully answer the request? Voice your honest assessment.
+Read all deliverables and quorum reports. From your Physical/Technical domain perspective, does the combined output fully answer the request? Voice your honest assessment.
 
 Then cast your vote: end your response with VOTE: AYE if the work is complete and ready, or VOTE: REVISE if something is missing (name specifically what and by whom).`,
         requestId
