@@ -16,7 +16,7 @@ import { killAll, cleanup } from './processTracker.js';
 import { classifyRequest, runB3C } from './b3c.js';
 import { runDirect } from './direct.js';
 import { runDirectGaia } from './gaia.js';
-import { callZeus } from './agentCalls.js';
+import { callZeus } from './gateway.js';
 
 // ── Concurrency limits ────────────────────────────────────────────────────────
 const COUNCIL_LIMIT = 1;  // TIER_2 + TIER_3 share one council slot

@@ -18,7 +18,7 @@ import path       from 'path';
 import os         from 'os';
 import { broadcast } from './olympus-ws.js';
 import { sendToGrowthGrid } from './telegram.js';
-import { callZeus, callPoseidon, callHades, callGaia } from './agentCalls.js';
+import { callZeus, callPoseidon, callHades, callGaia } from './gateway.js';
 
 export { callGaia };
 

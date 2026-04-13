@@ -1,6 +1,6 @@
 import { broadcast } from './olympus-ws.js';
 import { readFileSync } from 'fs';
-import { callZeus, callPoseidon, callHades } from './agentCalls.js';
+import { callZeus, callPoseidon, callHades } from './gateway.js';
 import { observeMission } from './gaia.js';
 
 // ── Classification ────────────────────────────────────────────────────────────

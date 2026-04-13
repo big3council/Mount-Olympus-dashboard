@@ -8,7 +8,7 @@
  */
 
 import { broadcast } from './olympus-ws.js';
-import { callZeus, callPoseidon, callHades } from './agentCalls.js';
+import { callZeus, callPoseidon, callHades } from './gateway.js';
 
 const AGENTS = {
   zeus:     { call: callZeus },
