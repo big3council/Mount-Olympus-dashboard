@@ -32,6 +32,42 @@ function isConversational(text) {
   return false;
 }
 
+// Name-callout short-circuit: if the user explicitly addresses a single
+// council member by name, route to that agent T1. No ambiguity, no Haiku.
+// Recognizes:
+//   "hello poseidon"  /  "hey hades"  /  "hi zeus"  /  "yo gaia"
+//   "poseidon"        (bare name)
+//   "poseidon,"  "zeus:"  "hades —"  (name as salutation)
+//   "poseidon quick check — is outbound still viable 2026?" (name first)
+// Does NOT fire on:
+//   "ZEUS PROTOCOL: ..." (already handled upstream via isDirect in queue.js)
+//   "what would zeus think" / "ask zeus about ..." (name not at start,
+//     not in salutation form — Haiku handles that kind of routing)
+const GREETING_WORDS = 'hi+|hello+|hey+|yo|sup|howdy|greetings|gm|good\\s*(?:morning|afternoon|evening|night)';
+const AGENT_NAMES    = 'zeus|poseidon|hades|gaia';
+const NAME_CALLOUT_REGEX = new RegExp(
+  '^\\s*(?:(?:' + GREETING_WORDS + ')[\\s,.!?:—-]+)?' + // optional greeting prefix
+  '(' + AGENT_NAMES + ')'                              + // agent name (captured)
+  '(?:\\b[\\s,.!?:—-]|$)',                              // word-boundary terminator
+  'i'
+);
+
+function detectAgentCallout(text) {
+  if (!text) return null;
+  const trimmed = String(text).trim();
+  if (!trimmed) return null;
+  // Never hijack "ZEUS PROTOCOL:" — the upstream isDirect logic in queue.js
+  // already treats that as a direct Zeus call.
+  if (/^zeus\s+protocol\s*:/i.test(trimmed)) return null;
+  // Gaia is isolated — she has her own pipeline, not a B3C T1 target.
+  // Don't return gaia here; let the normal flow handle it.
+  const m = trimmed.match(NAME_CALLOUT_REGEX);
+  if (!m) return null;
+  const name = m[1].toLowerCase();
+  if (name === 'gaia') return null; // route gaia through the normal path
+  return name; // 'zeus' | 'poseidon' | 'hades'
+}
+
 function readRoutingContext() {
   try {
     return fs.readFileSync(ROUTING_CONTEXT_PATH, 'utf8');
@@ -47,7 +83,15 @@ function readRoutingContext() {
  * @returns {Promise<{ tier: 'T1' | 'T2', agent: string | null, confidence: number }>}
  */
 export async function classifyJob(prompt) {
-  // Pre-Haiku short-circuit — see CONVERSATIONAL_REGEX above.
+  // Pre-Haiku name-callout short-circuit — when the user explicitly addresses
+  // a council member by name, route to that member T1 directly.
+  const calledAgent = detectAgentCallout(prompt);
+  if (calledAgent) {
+    console.log(`[classifier] '${String(prompt).slice(0, 60)}' → T1 → ${calledAgent} (1.00, name-callout fast-path)`);
+    return { tier: 'T1', agent: calledAgent, confidence: 1.0 };
+  }
+
+  // Pre-Haiku conversational short-circuit — greetings + very short prompts.
   if (isConversational(prompt)) {
     console.log(`[classifier] '${String(prompt).slice(0, 60)}' → T1 → zeus (1.00, conversational fast-path)`);
     return { tier: 'T1', agent: 'zeus', confidence: 1.0 };
