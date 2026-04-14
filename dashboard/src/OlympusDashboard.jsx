@@ -15,6 +15,7 @@ import CouncilThread from "./components/CouncilThread";
 import SummarizedBlock from "./components/SummarizedBlock";
 import GaiaTree from "./components/GaiaTree";
 import FruitDetailContent from "./components/FruitDetailContent";
+import QuorumPanel from "./components/council/QuorumPanel";
 
 export default function OlympusDashboard() {
   // ── Mission state ──────────────────────────────────────────────────────────
@@ -68,6 +69,10 @@ export default function OlympusDashboard() {
   const [expandedPrompts,   setExpandedPrompts]   = useState(new Set());
   const [expandedQueueItems, setExpandedQueueItems] = useState(new Set());
   const [cinematicOpen, setCinematicOpen] = useState(false);
+
+  // ── Phase 6: Quorum smoke test results ───────────────────────────────────
+  // Shape: { zeus: { "Hermes": { ok, latency_ms, ts }, ... }, poseidon: {...}, hades: {...} }
+  const [smokeTestResults, setSmokeTestResults] = useState(null);
   const cinematicCouncilRef = useRef(null);
 
   // ── LLM-powered mission titles (cached) ────────────────────────────────────
@@ -413,6 +418,7 @@ useEffect(() => {
               stage: "idle",
               uiMode,
               tier: null,
+              assigned_member: null,
               councilMessages: [],
               councilBackendMessages: [],
               progress: { zeus: 0, poseidon: 0, hades: 0 },
@@ -420,6 +426,8 @@ useEffect(() => {
               nodeTasks: {},
               nodeStatus: {},
               stageTimes: { idle: Date.now() },
+              quorumState: { zeus: { assignments: [], spark_returns: [], backend_council: [] }, poseidon: { assignments: [], spark_returns: [], backend_council: [] }, hades: { assignments: [], spark_returns: [], backend_council: [] } },
+              smokeTestResults: null,
               zeusDiagnostic: null,
               runStats: null,
               output: null,
@@ -436,9 +444,105 @@ useEffect(() => {
             if (!prev[msg.id]) return prev;
             return {
               ...prev,
-              [msg.id]: { ...prev[msg.id], tier: msg.tier, uiMode: tierToMode(msg.tier) },
+              [msg.id]: {
+                ...prev[msg.id],
+                tier: msg.tier,
+                uiMode: tierToMode(msg.tier),
+                assigned_member: msg.assigned_member ?? prev[msg.id].assigned_member ?? null,
+              },
             };
           });
+          break;
+        }
+
+        case "quorum_initial_council": {
+          if (!msg.id || !msg.head) return;
+          setMissions(prev => {
+            if (!prev[msg.id]) return prev;
+            const m = prev[msg.id];
+            const head = msg.head;
+            const qs = m.quorumState || {};
+            const headState = qs[head] || { assignments: [], spark_returns: [], backend_council: [] };
+            return {
+              ...prev,
+              [msg.id]: {
+                ...m,
+                quorumState: {
+                  ...qs,
+                  [head]: { ...headState, assignments: msg.assignments ?? headState.assignments },
+                },
+              },
+            };
+          });
+          break;
+        }
+
+        case "quorum_spark_return": {
+          if (!msg.id || !msg.head) return;
+          setMissions(prev => {
+            if (!prev[msg.id]) return prev;
+            const m = prev[msg.id];
+            const head = msg.head;
+            const qs = m.quorumState || {};
+            const headState = qs[head] || { assignments: [], spark_returns: [], backend_council: [] };
+            const entry = {
+              spark: msg.spark,
+              status: msg.status ?? "complete",
+              output: msg.output ?? null,
+              error: msg.error ?? null,
+              timestamp: msg.timestamp ?? Date.now(),
+            };
+            const existing = headState.spark_returns || [];
+            const replaced = existing.some(e => e.spark === entry.spark);
+            const nextReturns = replaced
+              ? existing.map(e => e.spark === entry.spark ? { ...e, ...entry } : e)
+              : [...existing, entry];
+            return {
+              ...prev,
+              [msg.id]: {
+                ...m,
+                quorumState: {
+                  ...qs,
+                  [head]: { ...headState, spark_returns: nextReturns },
+                },
+              },
+            };
+          });
+          break;
+        }
+
+        case "quorum_backend_council": {
+          if (!msg.id || !msg.head) return;
+          setMissions(prev => {
+            if (!prev[msg.id]) return prev;
+            const m = prev[msg.id];
+            const head = msg.head;
+            const qs = m.quorumState || {};
+            const headState = qs[head] || { assignments: [], spark_returns: [], backend_council: [] };
+            return {
+              ...prev,
+              [msg.id]: {
+                ...m,
+                quorumState: {
+                  ...qs,
+                  [head]: { ...headState, backend_council: msg.messages ?? headState.backend_council },
+                },
+              },
+            };
+          });
+          break;
+        }
+
+        case "quorum_smoke_test": {
+          // Global smoke test results for quorum health chips.
+          // Event shape: { results: { zeus: { "Hermes": { ok, latency_ms, ts }, ... }, ... } }
+          setSmokeTestResults(msg.results ?? null);
+          if (msg.id) {
+            setMissions(prev => {
+              if (!prev[msg.id]) return prev;
+              return { ...prev, [msg.id]: { ...prev[msg.id], smokeTestResults: msg.results ?? null } };
+            });
+          }
           break;
         }
 
@@ -1425,6 +1529,14 @@ useEffect(() => {
                       {isCoordinating ? "Receiving task assignment..." : "Awaiting execution..."}
                     </div>
                   )}
+                  {activeMission?.tier === "TIER_2" && (
+                    <QuorumPanel
+                      head={agent.key}
+                      mode={activeMission.assigned_member === agent.key ? "full" : "compact"}
+                      quorumState={activeMission.quorumState}
+                      smokeTestResults={activeMission.smokeTestResults || smokeTestResults}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -2324,7 +2436,7 @@ useEffect(() => {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {/* Top-mode toggle */}
             <div className="top-toggle">
-              {["council", "olympus", "record", "flywheel"].map(v => (
+              {["council", "olympus", "record", "history"].map(v => (
                 <button
                   key={v}
                   className={`top-toggle-btn ${topView === v ? "active" : ""}`}
@@ -2362,12 +2474,23 @@ useEffect(() => {
                         </div>
                         {quorum.length > 0 && (
                           <div className="quorum-row">
-                            {quorum.map(q => (
-                              <div key={q} className={`quorum-chip ${headStatus}`}>
-                                <span className="dot" />
-                                {q.toUpperCase()}
-                              </div>
-                            ))}
+                            {quorum.map(q => {
+                              // Prefer real smoke test result for this spark when available,
+                              // fall back to the parent head's reachability status.
+                              const smoke = smokeTestResults?.[n.toLowerCase()]?.[q];
+                              const chipStatus = smoke
+                                ? (smoke.ok ? "online" : "offline")
+                                : headStatus;
+                              const title = smoke
+                                ? (smoke.ok ? `${q} — ok (${smoke.latency_ms ?? "?"}ms)` : `${q} — failed`)
+                                : undefined;
+                              return (
+                                <div key={q} className={`quorum-chip ${chipStatus}`} title={title}>
+                                  <span className="dot" />
+                                  {q.toUpperCase()}
+                                </div>
+                              );
+                            })}
                           </div>
                         )}
                       </div>
@@ -2403,8 +2526,8 @@ useEffect(() => {
           </div>
         )}
 
-        {topView === "flywheel" && (
-          <div className="main-canvas" key="flywheel">
+        {topView === "history" && (
+          <div className="main-canvas" key="history">
             <FlywheelView />
           </div>
         )}

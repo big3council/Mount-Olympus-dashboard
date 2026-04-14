@@ -740,6 +740,66 @@ export const css = `
   .quorum-chip .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--muted); }
   .quorum-chip.online .dot { background: var(--done); box-shadow: 0 0 4px var(--done); }
   .quorum-chip.offline .dot { background: #ff5050; }
+
+  /* ── B3C Quorum Panel (Phase 6) ─────────────────────────────── */
+  .quorum-panel {
+    margin-top: 12px; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 6px;
+    background: rgba(5,7,15,0.55);
+    font-size: 11px;
+  }
+  .quorum-panel.compact { padding: 6px 10px; }
+  .quorum-section { margin-bottom: 10px; }
+  .quorum-section:last-child { margin-bottom: 0; }
+  .quorum-section-label {
+    font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.2em;
+    color: var(--muted); text-transform: uppercase; margin-bottom: 6px;
+  }
+  .quorum-section-count { margin-left: 6px; color: var(--gold2); font-family: 'JetBrains Mono', monospace; letter-spacing: 0; }
+
+  .quorum-assignments { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .quorum-assignment-item { display: flex; gap: 8px; font-size: 10px; color: var(--text); line-height: 1.5; }
+  .quorum-assignment-spark { color: var(--gold2); font-family: 'Cinzel', serif; letter-spacing: 0.08em; min-width: 80px; flex-shrink: 0; }
+  .quorum-assignment-task { color: var(--text); opacity: 0.85; flex: 1; }
+
+  .quorum-spark-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 6px; }
+  .spark-card {
+    border: 1px solid var(--border); border-radius: 4px;
+    background: rgba(13,18,37,0.7);
+    padding: 6px 8px; transition: border-color 0.3s, opacity 0.3s;
+  }
+  .spark-card-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+  .spark-card-name { font-family: 'Cinzel', serif; font-size: 9px; letter-spacing: 0.08em; color: var(--text); }
+  .spark-card-status-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+  .spark-dot-complete { background: var(--done); box-shadow: 0 0 4px var(--done); }
+  .spark-dot-working  { background: var(--active); box-shadow: 0 0 4px var(--active); animation: pulse-dot 1s ease infinite; }
+  .spark-dot-failed   { background: #ff5050; box-shadow: 0 0 4px #ff5050; }
+  .spark-card-output { font-size: 9px; line-height: 1.5; color: var(--muted); }
+  .spark-card-error  { font-size: 9px; line-height: 1.5; color: #ff8080; }
+  .spark-card-pending { font-size: 9px; color: var(--dim); font-style: italic; }
+  .spark-complete { border-color: rgba(94,232,176,0.25); }
+  .spark-failed   { border-color: rgba(255,80,80,0.3); }
+
+  .quorum-backend { display: flex; flex-direction: column; gap: 6px; }
+  .quorum-backend-msg { display: flex; gap: 8px; font-size: 10px; line-height: 1.5; }
+  .quorum-backend-speaker { font-family: 'Cinzel', serif; letter-spacing: 0.08em; color: var(--gold2); min-width: 80px; flex-shrink: 0; font-size: 9px; }
+  .quorum-backend-text { color: var(--text); opacity: 0.88; flex: 1; }
+
+  .smoke-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+  .smoke-strip-label { font-family: 'Cinzel', serif; font-size: 8px; letter-spacing: 0.18em; color: var(--muted); margin-right: 4px; }
+  .smoke-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border: 1px solid var(--border); border-radius: 3px;
+    font-size: 9px; letter-spacing: 0.06em; font-family: 'Cinzel', serif;
+    color: var(--muted);
+  }
+  .smoke-chip-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--muted); }
+  .smoke-ok { border-color: rgba(94,232,176,0.3); color: var(--done); }
+  .smoke-ok .smoke-chip-dot { background: var(--done); box-shadow: 0 0 4px var(--done); }
+  .smoke-failed { border-color: rgba(255,80,80,0.3); color: #ff8080; }
+  .smoke-failed .smoke-chip-dot { background: #ff5050; box-shadow: 0 0 4px #ff5050; }
+  .smoke-unknown .smoke-chip-dot { background: var(--dim); }
+
   /* ── Queue expand prompt ─────────────────────────────────────── */
   .queue-item-name { font-size: 14px; color: var(--text); flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500; }
   .queue-expand-btn {
