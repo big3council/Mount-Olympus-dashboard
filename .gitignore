@@ -42,3 +42,8 @@ framework/ws_quorum_test.mjs
 # Tools (shell scripts / python utils - runtime)
 tools/
 dashboard/public/constellations/
+
+# Runtime state (router-recent, etc.)
+framework/state/
+# Manual phase-work snapshots — dev artifacts, not source
+merge-snapshots/
