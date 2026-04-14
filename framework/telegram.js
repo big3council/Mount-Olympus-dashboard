@@ -32,14 +32,15 @@ const USER_CHAT_IDS = new Map([
 ]);
 
 // ── Bot configuration ─────────────────────────────────────────────────────────
-// The forge entry is a SEND-ONLY instance sharing @olympusforge_bot's token.
-// The polling side of that bot runs in the separate olympus-build-bot PM2
-// process (flywheel/build-bot.js); this entry exists only so routeComplete
-// can deliver synthesized output back to "forge · <sender>" channels.
+// Single front door: @olympusforge_bot. Polling lives in the separate
+// olympus-build-bot PM2 process (flywheel/build-bot.js). This file only needs
+// a SEND-ONLY instance for delivering synthesized output back to Telegram
+// (DMs and the War Room group chat alike).
+//
+// The legacy zeus / poseidon / hades bot tokens are no longer used here —
+// every reply now goes through the forge bot regardless of which council
+// head answered. Tokens are kept in .env in case we ever need to revive them.
 const BOT_CONFIGS = [
-  { name: 'zeus',     tokenEnv: 'TELEGRAM_BOT_TOKEN',    target: 'zeus',     polling: true  },
-  { name: 'poseidon', tokenEnv: 'POSEIDON_BOT_TOKEN',    target: 'poseidon', polling: false },
-  { name: 'hades',    tokenEnv: 'HADES_BOT_TOKEN',       target: 'hades',    polling: false },
   { name: 'forge',    tokenEnv: 'BUILD_BOT_TOKEN',       target: 'zeus',     polling: false },
 ];
 
@@ -105,14 +106,14 @@ async function sendChunked(bot, chatId, text) {
 function resolveDestination(channel, directTarget) {
   const lower = channel.toLowerCase();
 
-  // War Room → reply to group chat via Zeus bot
+  // War Room → reply to group chat via the forge bot
   if (lower.includes('war room')) {
     const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
     if (!warRoomId) {
       console.warn('[Telegram] WAR_ROOM_CHAT_ID not set — cannot route War Room reply');
       return null;
     }
-    const bot = activeBots.get('zeus') ?? [...activeBots.values()][0];
+    const bot = activeBots.get('forge') ?? [...activeBots.values()][0];
     if (!bot) { console.warn('[Telegram] No bot for War Room reply'); return null; }
     return { bot, chatId: warRoomId };
   }
@@ -127,12 +128,9 @@ function resolveDestination(channel, directTarget) {
       console.warn(`[Telegram] Cannot resolve chatId from channel "${channel}"`);
       return null;
     }
-    // Bot: match direct target agent if set, else Zeus for B3C responses
-    const botName = directTarget === 'poseidon' ? 'poseidon'
-                  : directTarget === 'hades'    ? 'hades'
-                  : 'zeus';
-    const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
-    if (!bot) { console.warn(`[Telegram] No bot available for ${botName} reply`); return null; }
+    // Single front door: forge bot delivers all DMs.
+    const bot = activeBots.get('forge') ?? [...activeBots.values()][0];
+    if (!bot) { console.warn('[Telegram] No bot available for DM reply'); return null; }
     return { bot, chatId };
   }
 
@@ -185,32 +183,31 @@ function routeComplete(event) {
   const userName = userId ? APPROVED_USERS.get(userId) : null;
   if (!isForge && !userName) return; // unrecognized user → no delivery
 
-  // Select bot: forge channel → forge bot; direct agent → that agent's bot;
-  // otherwise the default Zeus bot.
-  const botName = isForge ? 'forge'
-                : event.direct === 'poseidon' ? 'poseidon'
-                : event.direct === 'hades'    ? 'hades'
-                : 'zeus';
-  const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
+  // Single front door: every reply (DM + War Room) ships through the forge bot.
+  const bot = activeBots.get('forge') ?? [...activeBots.values()][0];
 
-  // Deliver to user's DM (Telegram DM chatId === userId for private chats)
-  if (bot) {
+  // Deliver to user's DM (Telegram DM chatId === userId for private chats).
+  // Skip the DM if this is purely a War Room mission — group chat delivery
+  // below handles it. (For mixed cases — e.g. Telegram DM that mentions War
+  // Room — both send.)
+  if (bot && !isWarRoom) {
     const whom = userName || (isForge ? 'forge-user' : String(userId));
-    console.log(`[Telegram] Reply via userId → ${whom} chatId=${userId} bot=${botName} (id=${event.id})`);
+    console.log(`[Telegram] Reply → ${whom} chatId=${userId} bot=forge (id=${event.id})`);
     sendChunked(bot, userId, output).catch(e =>
-      console.error('[Telegram] Path 2 DM delivery failed:', e.message)
+      console.error('[Telegram] DM delivery failed:', e.message)
     );
   }
 
-  // Also deliver to War Room group chat if that was the origin channel
+  // Deliver to War Room group chat if that was the origin channel.
   if (isWarRoom) {
     const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
-    const wrBot = activeBots.get('zeus') ?? [...activeBots.values()][0];
-    if (warRoomId && wrBot) {
-      console.log(`[Telegram] Also delivering to War Room chatId=${warRoomId} (id=${event.id})`);
-      sendChunked(wrBot, warRoomId, output).catch(e =>
-        console.error('[Telegram] Path 2 War Room delivery failed:', e.message)
+    if (warRoomId && bot) {
+      console.log(`[Telegram] Reply → War Room chatId=${warRoomId} bot=forge (id=${event.id})`);
+      sendChunked(bot, warRoomId, output).catch(e =>
+        console.error('[Telegram] War Room delivery failed:', e.message)
       );
+    } else if (!warRoomId) {
+      console.warn('[Telegram] WAR_ROOM_CHAT_ID not set — skipping War Room delivery');
     }
   }
 }
@@ -218,28 +215,31 @@ function routeComplete(event) {
 // ── Deliver queue acknowledgment to Telegram ──────────────────────────────────
 function deliverAck(event) {
   const userId   = event.userId ? Number(event.userId) : null;
-  const userName = userId ? APPROVED_USERS.get(userId) : null;
-  if (!userName || !event.ackText) return;
+  if (!event.ackText) return;
+  // Allow forge-bot users (BUILD_BOT_USERS gates them at ingest); only
+  // require APPROVED_USERS for non-forge channels.
+  const channel   = event.channel || '';
+  const lowerCh   = channel.toLowerCase();
+  const isForge   = lowerCh.startsWith('forge');
+  const isWarRoom = lowerCh.includes('war room');
+  const userName  = userId ? APPROVED_USERS.get(userId) : null;
+  if (!isForge && !isWarRoom && !userName) return;
 
-  const channel    = event.channel || '';
-  const isWarRoom  = channel.toLowerCase().includes('war room');
-  const botName    = event.target === 'poseidon' ? 'poseidon'
-                   : event.target === 'hades'    ? 'hades'
-                   : 'zeus';
-  const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
+  const bot = activeBots.get('forge') ?? [...activeBots.values()][0];
   if (!bot) return;
 
-  // DM the user
-  sendReply(bot, userId, event.ackText).catch(e =>
-    console.error('[Telegram] Ack DM delivery failed:', e.message)
-  );
+  // DM the user (skip if War Room — group delivery covers it)
+  if (userId && !isWarRoom) {
+    sendReply(bot, userId, event.ackText).catch(e =>
+      console.error('[Telegram] Ack DM delivery failed:', e.message)
+    );
+  }
 
-  // Also post to War Room if that was the origin
+  // War Room ack
   if (isWarRoom) {
     const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
-    const wrBot = activeBots.get('zeus') ?? [...activeBots.values()][0];
-    if (warRoomId && wrBot) {
-      sendReply(wrBot, warRoomId, event.ackText).catch(e =>
+    if (warRoomId) {
+      sendReply(bot, warRoomId, event.ackText).catch(e =>
         console.error('[Telegram] Ack War Room delivery failed:', e.message)
       );
     }

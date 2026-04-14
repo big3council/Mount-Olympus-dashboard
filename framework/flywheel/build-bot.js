@@ -40,16 +40,30 @@ log('started — polling Telegram, request =', REQUEST_URL);
 // ---------------------------------------------------------------------------
 // Every text message → create job → wake Zeus
 // ---------------------------------------------------------------------------
+// War Room group chat id (for routing replies back through framework
+// telegram.js's War Room delivery branch). Optional — only set this if
+// the forge bot is a member of a group designated as the War Room.
+const WAR_ROOM_CHAT_ID = process.env.WAR_ROOM_CHAT_ID
+  ? String(process.env.WAR_ROOM_CHAT_ID)
+  : null;
+
 bot.on('message', async (msg) => {
-  const chatId = msg.chat.id;
-  const text = (msg.text || '').trim();
+  const chatId    = msg.chat.id;
+  const chatType  = msg.chat.type;          // 'private' | 'group' | 'supergroup' | 'channel'
+  const text      = (msg.text || '').trim();
   if (!text) return;
 
-  const sender = msg.from?.username || String(msg.from?.id || 'unknown');
-  log(`msg from ${sender} (chat ${chatId}): ${text.slice(0, 120)}`);
+  const sender    = msg.from?.username || String(msg.from?.id || 'unknown');
+  const isGroup   = chatType === 'group' || chatType === 'supergroup';
+  const isWarRoom = isGroup && WAR_ROOM_CHAT_ID && String(chatId) === WAR_ROOM_CHAT_ID;
 
-  // Enforce auth gate if BUILD_BOT_USERS is configured
-  if (ALLOWED_USERS.length > 0) {
+  log(`msg from ${sender} (chat ${chatId}, ${chatType}${isWarRoom ? ', WAR ROOM' : ''}): ${text.slice(0, 120)}`);
+
+  // Auth gate. Always applies to DMs. For War Room (a group everyone in it
+  // is implicitly trusted), skip the per-user gate — Carson controls group
+  // membership directly. For other groups (none expected today), still
+  // enforce BUILD_BOT_USERS as a safety net.
+  if (ALLOWED_USERS.length > 0 && !isWarRoom) {
     const senderLower = sender.toLowerCase();
     const senderId = String(msg.from?.id || '');
     if (!ALLOWED_USERS.includes(senderLower) && !ALLOWED_USERS.includes(senderId)) {
@@ -60,19 +74,21 @@ bot.on('message', async (msg) => {
   }
 
   try {
-    // Forward straight into the unified pipeline. Zeus (or a direct-agent
-    // target when user prefixes "ZEUS PROTOCOL:") handles routing. userId is
-    // passed so the framework's Telegram delivery hook (telegram.js Path 2)
-    // can deliver the synthesized output back to this chat via the
-    // forge-bot send-only instance (BUILD_BOT_TOKEN).
+    // Forward into the unified pipeline. The framework's Telegram delivery
+    // hook (telegram.js routeComplete) ships the synthesized reply back via
+    // the forge bot to either the user's DM or the War Room group, based on
+    // channel + isWarRoom flag.
+    const channel = isWarRoom ? `war room · ${sender}` : `forge · ${sender}`;
+
     const reqResp = await fetch(REQUEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         text,
-        channel: `forge · ${sender}`,
-        target:  'zeus',
-        userId:  String(msg.from?.id || chatId),
+        channel,
+        target:    'zeus',
+        userId:    String(msg.from?.id || chatId),
+        ...(isWarRoom ? { isWarRoom: true } : {}),
       }),
     });
 
