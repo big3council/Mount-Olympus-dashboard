@@ -32,10 +32,15 @@ const USER_CHAT_IDS = new Map([
 ]);
 
 // ── Bot configuration ─────────────────────────────────────────────────────────
+// The forge entry is a SEND-ONLY instance sharing @olympusforge_bot's token.
+// The polling side of that bot runs in the separate olympus-build-bot PM2
+// process (flywheel/build-bot.js); this entry exists only so routeComplete
+// can deliver synthesized output back to "forge · <sender>" channels.
 const BOT_CONFIGS = [
   { name: 'zeus',     tokenEnv: 'TELEGRAM_BOT_TOKEN',    target: 'zeus',     polling: true  },
   { name: 'poseidon', tokenEnv: 'POSEIDON_BOT_TOKEN',    target: 'poseidon', polling: false },
   { name: 'hades',    tokenEnv: 'HADES_BOT_TOKEN',       target: 'hades',    polling: false },
+  { name: 'forge',    tokenEnv: 'BUILD_BOT_TOKEN',       target: 'zeus',     polling: false },
 ];
 
 // ── Active bot instances (name → bot) ─────────────────────────────────────────
@@ -164,23 +169,34 @@ function routeComplete(event) {
   }
 
   // Path 2: userId-based delivery — handles dashboard missions and restart recovery.
-  // userId is now included in request_complete by b3c.js, direct.js, and gaia.js.
+  // userId is now included in request_complete by b3c.js, direct.js, and gaia.js,
+  // and by the forge channel (build-bot.js posts /request with userId).
   const userId = event.userId ? Number(event.userId) : null;
-  const userName = userId ? APPROVED_USERS.get(userId) : null;
-  if (!userName) return; // No userId or unrecognized user — no Telegram delivery
 
   const channel = event.channel || '';
-  const isWarRoom = channel.toLowerCase().includes('war room');
+  const lowerCh = channel.toLowerCase();
+  const isForge   = lowerCh.startsWith('forge');
+  const isWarRoom = lowerCh.includes('war room');
 
-  // Select bot by direct target agent (for per-agent missions), else Zeus
-  const botName = event.direct === 'poseidon' ? 'poseidon'
+  // For forge (@olympusforge_bot) we trust the caller's userId as the chatId
+  // directly — the Telegram bot has its own BUILD_BOT_USERS allowlist at the
+  // polling side, so we don't re-check APPROVED_USERS here. For every other
+  // channel keep the approved-user gate.
+  const userName = userId ? APPROVED_USERS.get(userId) : null;
+  if (!isForge && !userName) return; // unrecognized user → no delivery
+
+  // Select bot: forge channel → forge bot; direct agent → that agent's bot;
+  // otherwise the default Zeus bot.
+  const botName = isForge ? 'forge'
+                : event.direct === 'poseidon' ? 'poseidon'
                 : event.direct === 'hades'    ? 'hades'
                 : 'zeus';
   const bot = activeBots.get(botName) ?? activeBots.get('zeus') ?? [...activeBots.values()][0];
 
   // Deliver to user's DM (Telegram DM chatId === userId for private chats)
   if (bot) {
-    console.log(`[Telegram] Reply via userId → ${userName} chatId=${userId} bot=${botName} (id=${event.id})`);
+    const whom = userName || (isForge ? 'forge-user' : String(userId));
+    console.log(`[Telegram] Reply via userId → ${whom} chatId=${userId} bot=${botName} (id=${event.id})`);
     sendChunked(bot, userId, output).catch(e =>
       console.error('[Telegram] Path 2 DM delivery failed:', e.message)
     );

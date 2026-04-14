@@ -61,8 +61,10 @@ bot.on('message', async (msg) => {
 
   try {
     // Forward straight into the unified pipeline. Zeus (or a direct-agent
-    // target when user prefixes "ZEUS PROTOCOL:") handles routing and the
-    // result is delivered via the framework's existing Telegram delivery path.
+    // target when user prefixes "ZEUS PROTOCOL:") handles routing. userId is
+    // passed so the framework's Telegram delivery hook (telegram.js Path 2)
+    // can deliver the synthesized output back to this chat via the
+    // forge-bot send-only instance (BUILD_BOT_TOKEN).
     const reqResp = await fetch(REQUEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -70,6 +72,7 @@ bot.on('message', async (msg) => {
         text,
         channel: `forge · ${sender}`,
         target:  'zeus',
+        userId:  String(msg.from?.id || chatId),
       }),
     });
 

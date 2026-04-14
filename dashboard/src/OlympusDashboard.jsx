@@ -1405,6 +1405,17 @@ useEffect(() => {
 
   // ── TIER 2 VIEW — Focused trio ─────────────────────────────────────────────
   const renderTier2 = () => {
+    // Idle state — no mission in progress. Show the CouncilChamber (three
+    // thrones, present-and-waiting) rather than an empty three-domain card grid.
+    if (!activeMission) {
+      return (
+        <>
+          {renderSidebar()}
+          <CouncilChamber nodeHealth={nodeHealth} />
+        </>
+      );
+    }
+
     const isCoordinating = stage === "council_initial";
     const isExecuting    = stage === "execution";
     const isReviewing    = stage === "council_backend";
