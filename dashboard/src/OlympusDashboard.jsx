@@ -914,16 +914,32 @@ useEffect(() => {
   };
 
   // ── Cancel mission (active/pending) ───────────────────────────────────────
+  // Optimistically marks cancelled in local state so the UI responds even if
+  // the server's WS event is slow. If the server doesn't recognize the id
+  // (404 — already done/stale), falls through to a hard delete so the trash
+  // click never silently no-ops.
   const handleCancelMission = async (id, e) => {
     e.stopPropagation();
+    setMissions(prev => {
+      if (!prev[id]) return prev;
+      return { ...prev, [id]: { ...prev[id], status: "cancelled", stage: "done" } };
+    });
     try {
-      await fetch(`${API_URL}/missions/${id}/cancel`, { method: "POST" });
+      const r = await fetch(`${API_URL}/missions/${id}/cancel`, { method: "POST" });
+      if (r.status === 404) {
+        // Mission isn't in the live queue anymore — remove from the persisted store + local state.
+        setMissions(prev => { const next = { ...prev }; delete next[id]; return next; });
+        if (activeMissionId === id) setActiveMissionId(null);
+        await fetch(`${API_URL}/missions/${id}`, { method: "DELETE" }).catch(() => {});
+      }
     } catch (err) {
       console.error("[Dashboard] Cancel failed:", err);
     }
   };
 
   // ── Delete mission (completed/cancelled) ───────────────────────────────────
+  // Optimistic local removal + persisted DELETE. If the persisted record is
+  // already gone (404), the local removal still wins.
   const handleDeleteMission = async (id, e) => {
     e.stopPropagation();
     setMissions(prev => { const next = { ...prev }; delete next[id]; return next; });
@@ -1252,7 +1268,11 @@ useEffect(() => {
               a.position - b.position
             )
             .map(q => {
-              const tierLabel = q.tier === "TIER_1" ? "T-I" : q.tier === "TIER_2" ? "T-II" : q.tier === "TIER_2" ? "T-III" : q.tier === "DIRECT" ? "DIR" : "";
+              // Legacy TIER_3 missions are semantically TIER_2 in the unified pipeline — display as T-II.
+              const tierLabel = q.tier === "TIER_1" ? "T-I"
+                              : (q.tier === "TIER_2" || q.tier === "TIER_3") ? "T-II"
+                              : q.tier === "DIRECT" ? "DIR"
+                              : "";
               const userLabel = q.userId === "8150818650" ? "CARSON" : q.userId === "874345067" ? "TYLER" : "";
               return (
                 <div key={q.id} className="queue-item">
@@ -1342,7 +1362,8 @@ useEffect(() => {
                 )}
                 {m.tier && (
                   <div className="req-tier" style={{ margin: 0 }}>
-                    {m.tier === "TIER_1" ? "T-I" : m.tier === "TIER_2" ? "T-II" : "T-III"}
+                    {/* Legacy TIER_3 missions are semantically TIER_2 in the unified pipeline. */}
+                    {m.tier === "TIER_1" ? "T-I" : "T-II"}
                     {m.uiMode === "zeus_protocol" ? " · ZEUS" : m.uiMode === "poseidon" ? " · POSEIDON" : m.uiMode === "hades" ? " · HADES" : m.uiMode === "gaia" ? " · GAIA" : ""}
                   </div>
                 )}
