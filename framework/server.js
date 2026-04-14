@@ -252,6 +252,45 @@ app.post('/request', (req, res) => {
   });
 });
 
+// ── Direct-agent route (bypasses classifier) ─────────────────────────────────
+// POST /agent/:name { text, channel?, userId? }
+// :name must be one of poseidon | hades | gaia. (Zeus routes through the
+// classifier by default; use "ZEUS PROTOCOL: ..." prefix via /request for a
+// direct Zeus call.) Returns {ok, id} just like /request.
+app.post('/agent/:name', (req, res) => {
+  const name = String(req.params.name || '').toLowerCase();
+  const DIRECT_AGENTS = new Set(['poseidon', 'hades', 'gaia']);
+  if (!DIRECT_AGENTS.has(name)) {
+    return res.status(400).json({
+      error: `Direct route supports: ${[...DIRECT_AGENTS].join(', ')}. ` +
+             `For Zeus, POST /request with text starting "ZEUS PROTOCOL:".`,
+    });
+  }
+
+  const { text, channel = `direct · ${name}`, userId, messages } = req.body ?? {};
+  if (!text) {
+    return res.status(400).json({ error: 'text is required' });
+  }
+
+  const id = `req_${Date.now()}`;
+  console.log(`[Router] id=${id} target=${name} (direct) channel=${channel}`);
+
+  res.json({ ok: true, id });
+
+  broadcast({
+    type: 'request_start',
+    id, text, channel,
+    target: name,
+    ...(userId ? { userId } : {}),
+  });
+
+  // Same enqueue as /request — queue.js treats target ∈ {poseidon,hades,gaia}
+  // as isDirect=true and skips classification.
+  enqueue({ id, text, channel, target: name, userId, messages }).catch(err => {
+    console.error(`[Router] enqueue failed for ${id}:`, err.message);
+  });
+});
+
 // ── Gaia conversations persistence ────────────────────────────────────────────
 app.get('/gaia/conversations', (_req, res) => {
   res.json(Object.values(gaiaConvsStore));

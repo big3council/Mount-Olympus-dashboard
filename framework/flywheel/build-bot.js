@@ -1,7 +1,7 @@
 // ~/olympus/framework/flywheel/build-bot.js
 // Mount Olympus — Build Bot (Telegram)
-// Every message = a flywheel job. Zeus classifies, not the bot.
-// Bot creates job → wakes Zeus → Zeus handles everything.
+// Every message is forwarded into the unified B3C pipeline via POST /request.
+// Zeus classifies (T1 vs T2); direct-agent targets bypass the classifier.
 
 import dotenv from 'dotenv';
 import path from 'path';
@@ -12,8 +12,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 dotenv.config({ path: path.resolve(__dirname, '..', '.env') });
 
-const TOKEN        = process.env.BUILD_BOT_TOKEN;
-const FLYWHEEL_URL = process.env.BUILD_BOT_FLYWHEEL_URL || 'http://127.0.0.1:18780/flywheel';
+const TOKEN       = process.env.BUILD_BOT_TOKEN;
+const REQUEST_URL = process.env.BUILD_BOT_REQUEST_URL || 'http://127.0.0.1:18780/request';
 
 if (!TOKEN) {
   console.error('[build-bot] BUILD_BOT_TOKEN missing in env — exiting');
@@ -35,7 +35,7 @@ if (ALLOWED_USERS.length === 0) {
   log('auth gate active — allowed users:', ALLOWED_USERS.join(', '));
 }
 
-log('started — polling Telegram, flywheel =', FLYWHEEL_URL);
+log('started — polling Telegram, request =', REQUEST_URL);
 
 // ---------------------------------------------------------------------------
 // Every text message → create job → wake Zeus
@@ -59,43 +59,28 @@ bot.on('message', async (msg) => {
     }
   }
 
-  // First line = title, rest = description
-  const lines = text.split('\n');
-  const title = lines[0].trim();
-  const description = lines.slice(1).join('\n').trim();
-
   try {
-    // Step 1: Create job with pending_classification — Zeus will classify
-    const jobResp = await fetch(`${FLYWHEEL_URL}/jobs`, {
+    // Forward straight into the unified pipeline. Zeus (or a direct-agent
+    // target when user prefixes "ZEUS PROTOCOL:") handles routing and the
+    // result is delivered via the framework's existing Telegram delivery path.
+    const reqResp = await fetch(REQUEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title,
-        description,
-        submitter: sender,
+        text,
+        channel: `forge · ${sender}`,
+        target:  'zeus',
       }),
     });
 
-    if (!jobResp.ok) {
-      const errText = await jobResp.text();
-      throw new Error(`create job ${jobResp.status}: ${errText}`);
+    if (!reqResp.ok) {
+      const errText = await reqResp.text();
+      throw new Error(`create request ${reqResp.status}: ${errText}`);
     }
-    const job = await jobResp.json();
-    log('job created:', job.id);
+    const req = await reqResp.json();
+    log('request created:', req.id);
 
-    // Step 2: Wake Zeus — fire and forget
-    fetch(`${FLYWHEEL_URL}/wake-zeus`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        job_id: job.id,
-        prompt: text,
-        chat_id: String(chatId),
-      }),
-    }).catch(err => log('wake-zeus call error:', err.message));
-
-    // Step 3: Acknowledge
-    await bot.sendMessage(chatId, `\u26A1 Job received. Zeus is on it.\n\n${job.id}`);
+    await bot.sendMessage(chatId, '\u26A1 Council receiving...');
 
   } catch (e) {
     log('error:', e.message);
