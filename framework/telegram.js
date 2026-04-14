@@ -1,16 +1,27 @@
 /**
  * telegram.js — Mount Olympus Telegram bot integration
  *
- * Three bots mirror the dashboard routing:
- *   Zeus bot     → full B3C (tier-classified) or ZEUS PROTOCOL direct
- *                  Also handles War Room group chat (B3C, reply to group)
- *   Poseidon bot → direct Poseidon
- *   Hades bot    → direct Hades
+ * Three Telegram surfaces, three different owners:
+ *   • @olympusforge_bot (forge)  — smart front door. Polling lives in the
+ *                                   separate olympus-build-bot PM2 process;
+ *                                   this file holds only a send-only instance
+ *                                   used by routeComplete for pipeline replies.
+ *   • @zeusbot                   — direct-to-Zeus bot. Polling lives HERE.
+ *                                   The inbound handler calls gateway.callAgent
+ *                                   synchronously and replies with Zeus's
+ *                                   response text. No queue, no classifier, no
+ *                                   mission. Use when you already know you
+ *                                   want to talk to Zeus.
+ *   • @poseidonbot / @hadesbot   — direct-to-Poseidon/Hades. Polled by each
+ *                                   agent's OWN OpenClaw gateway on its own
+ *                                   node (NOT by the framework). Don't add
+ *                                   them to BOT_CONFIGS here — Telegram will
+ *                                   return 409 Conflict on token collision.
  *
  * Gaia's Telegram is managed exclusively by her own OpenClaw gateway.
  * Only messages from approved user IDs are processed.
  *
- * Reply routing has two paths (tried in order):
+ * Reply routing for pipeline (forge) missions:
  *   1. Pending map  — exact chatId + bot stored when the message arrived
  *   2. Channel name — parsed from the channel string on request_complete,
  *                     handles restarts and API-initiated Telegram missions
@@ -18,6 +29,7 @@
 
 import TelegramBot from 'node-telegram-bot-api';
 import { subscribe } from './olympus-ws.js';
+import { callAgent } from './gateway.js';
 
 // ── Approved senders ──────────────────────────────────────────────────────────
 const APPROVED_USERS = new Map([
@@ -32,16 +44,20 @@ const USER_CHAT_IDS = new Map([
 ]);
 
 // ── Bot configuration ─────────────────────────────────────────────────────────
-// Single front door: @olympusforge_bot. Polling lives in the separate
-// olympus-build-bot PM2 process (flywheel/build-bot.js). This file only needs
-// a SEND-ONLY instance for delivering synthesized output back to Telegram
-// (DMs and the War Room group chat alike).
-//
-// The legacy zeus / poseidon / hades bot tokens are no longer used here —
-// every reply now goes through the forge bot regardless of which council
-// head answered. Tokens are kept in .env in case we ever need to revive them.
+// Telegram topology — three surfaces, three owners:
+//   1) @olympusforge_bot      → polled by olympus-build-bot PM2 process.
+//                                POSTs to /request (smart pipeline routing).
+//                                Send-only instance below delivers replies.
+//   2) @zeusbot                → polled HERE (this file). Direct-to-Zeus:
+//                                handler calls gateway.callAgent("zeus", ...)
+//                                and replies synchronously. No pipeline.
+//   3) @poseidonbot / @hadesbot → polled by each agent's own OpenClaw
+//                                instance on their own node. NOT touched by
+//                                the framework (would cause 409 conflicts).
+//                                Carson's intentional design.
 const BOT_CONFIGS = [
-  { name: 'forge',    tokenEnv: 'BUILD_BOT_TOKEN',       target: 'zeus',     polling: false },
+  { name: 'forge', tokenEnv: 'BUILD_BOT_TOKEN',    target: 'zeus', polling: false                },
+  { name: 'zeus',  tokenEnv: 'TELEGRAM_BOT_TOKEN', target: 'zeus', polling: true,  direct: true  },
 ];
 
 // ── Active bot instances (name → bot) ─────────────────────────────────────────
@@ -300,53 +316,59 @@ export function initTelegram() {
 
       const userName = APPROVED_USERS.get(userId);
       if (!userName) {
-        console.log(`[Telegram] Blocked userId=${userId} (not approved)`);
+        console.log(`[Telegram] Blocked userId=${userId} (not approved for ${cfg.name})`);
         return;
       }
 
-      // ── War Room group chat (Zeus bot only) ──────────────────────────────
-      const warRoomId = Number(process.env.WAR_ROOM_CHAT_ID);
-      const isWarRoom = cfg.name === 'zeus' && warRoomId && chatId === warRoomId;
-
-      // Non-Zeus bots ignore group chats
-      if (cfg.name !== 'zeus' && msg.chat.type !== 'private') return;
-
-      // Build route
-      const routeTarget = isWarRoom ? 'zeus' : cfg.target;
-
-      const identityPrefix = isWarRoom
-        ? `Message from ${userName} in the War Room: `
-        : `Message from ${userName}: `;
-
-      let routeText;
-      if (cfg.name === 'zeus' && !isWarRoom && rawText.toUpperCase().startsWith('ZEUS PROTOCOL')) {
-        const stripped = rawText.replace(/^ZEUS PROTOCOL[:\s]*/i, '').trim();
-        routeText = `ZEUS PROTOCOL: ${identityPrefix}${stripped}`;
-      } else {
-        routeText = identityPrefix + rawText;
+      // Direct bots (zeus / poseidon / hades) only handle private DMs.
+      // War Room runs through @olympusforge_bot (see build-bot.js). Skip
+      // group-chat messages on the direct bots to avoid double-handling.
+      if (msg.chat.type !== 'private') {
+        return;
       }
 
-      const channel = isWarRoom ? `War Room · ${userName}` : `Telegram · ${userName}`;
+      console.log(`[Telegram] ${cfg.name} ← ${userName} (${userId}): ${rawText.slice(0, 60)}`);
 
-      console.log(`[Telegram] ${isWarRoom ? 'war-room' : cfg.name} ← ${userName} (${userId}): ${rawText.slice(0, 60)}`);
+      // ── Direct bots: bypass the pipeline entirely ─────────────────────────
+      // Call the agent's OpenClaw instance directly; reply with the response
+      // text. No queue, no classifier, no mission state. userId flows through
+      // so gateway.userSessionKey produces a stable per-(user, agent) session
+      // key and the agent's OpenClaw threads conversation history per user.
+      if (cfg.direct) {
+        try {
+          await bot.sendChatAction(chatId, 'typing').catch(() => {});
+          const prompt = `Message from ${userName}: ${rawText}`;
+          const reply = await callAgent({
+            node:       cfg.target,
+            prompt,
+            sessionKey: `user-${userName.toLowerCase()}-${cfg.target}`,
+          });
+          await sendChunked(bot, chatId, reply || '…');
+        } catch (err) {
+          console.error(`[Telegram] ${cfg.name} direct error:`, err.message);
+          await bot.sendMessage(chatId, `⚠️ ${cfg.target[0].toUpperCase() + cfg.target.slice(1)} is unreachable right now.`).catch(() => {});
+        }
+        return;
+      }
 
+      // ── Pipeline path (not used today — forge is send-only) ──────────────
+      // Left in place in case a future config re-enables polling on a non-
+      // direct bot that should route through /request. Kept for symmetry.
+      const routeText = `Message from ${userName}: ${rawText}`;
+      const channel   = `Telegram · ${userName}`;
       try {
         const res = await fetch('http://127.0.0.1:18780/request', {
           method:  'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            text:      routeText,
+            text:   routeText,
             channel,
-            target:    routeTarget,
-            userId:    String(userId),
-            isWarRoom: isWarRoom || undefined,
+            target: cfg.target,
+            userId: String(userId),
           }),
         });
-
         const data = await res.json();
-
         if (data.ok && data.id) {
-          // Store exact chatId + bot for primary return routing
           pending.set(data.id, { chatId, bot });
         } else {
           await bot.sendMessage(chatId, '⚠️ Council unavailable. Try again.');
