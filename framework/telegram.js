@@ -79,13 +79,62 @@ function splitMessage(text) {
   return chunks;
 }
 
-// ── Send a message (Markdown → plain text fallback) ───────────────────────────
-function sendReply(bot, chatId, text) {
-  return bot.sendMessage(chatId, text, { parse_mode: 'Markdown' })
-    .catch(() =>
-      bot.sendMessage(chatId, text)
-        .catch(e => console.error('[Telegram] Failed to send reply:', e.message))
-    );
+// ── Send-level dedup: suppress identical (chatId, text) sends within 30s ─────
+// Guards against accidental double delivery — e.g. the routeComplete path
+// firing twice, or a network hiccup that confuses the Markdown→plain retry.
+// Keyed by chatId + first 80 chars of text + length (collision-safe enough
+// for a 30-second window).
+const sendFingerprints = new Map(); // key → timestamp
+const SEND_DEDUP_TTL = 30 * 1000;
+
+function sendFingerprint(chatId, text) {
+  return `${chatId}::${text.length}::${text.slice(0, 80)}`;
+}
+
+function pruneSendFingerprints() {
+  const now = Date.now();
+  for (const [k, ts] of sendFingerprints) {
+    if (now - ts > SEND_DEDUP_TTL) sendFingerprints.delete(k);
+  }
+}
+
+// Only retry on actual Markdown parse errors. Network errors (ECONNRESET,
+// ETIMEDOUT, EFATAL) may have already delivered the message, so retrying
+// would cause a duplicate. Telegram reports parse errors as 400 with a
+// "can't parse entities" / "can't find end" description.
+function isMarkdownParseError(err) {
+  const body = err?.response?.body;
+  const desc = (body && typeof body === 'object' ? body.description : '') || err?.message || '';
+  return /can't parse entities|can't find end|unclosed|BUTTON_URL_INVALID|Bad Request:/i.test(desc)
+      && !/ECONNRESET|ETIMEDOUT|EFATAL|ENETUNREACH/i.test(desc);
+}
+
+// ── Send a message (Markdown → plain text fallback on parse errors only) ─────
+async function sendReply(bot, chatId, text) {
+  pruneSendFingerprints();
+  const fp = sendFingerprint(chatId, text);
+  const prev = sendFingerprints.get(fp);
+  if (prev && Date.now() - prev < SEND_DEDUP_TTL) {
+    console.warn(`[Telegram] Send dedup: suppressed duplicate to chatId=${chatId} (fp reuse within ${SEND_DEDUP_TTL}ms)`);
+    return;
+  }
+  sendFingerprints.set(fp, Date.now());
+
+  try {
+    await bot.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+  } catch (err) {
+    if (isMarkdownParseError(err)) {
+      try {
+        await bot.sendMessage(chatId, text);
+      } catch (e2) {
+        console.error('[Telegram] Plain-text fallback failed:', e2.message);
+      }
+    } else {
+      // Network / transport error — the Markdown send MAY have succeeded.
+      // Don't retry; just log. Worst case: user sees nothing and resends.
+      console.error('[Telegram] Send failed (no retry to avoid dup):', err.message);
+    }
+  }
 }
 
 // ── Send a long message, splitting into chunks if needed ──────────────────────
