@@ -20,6 +20,7 @@ let carsonClient = null;
 let tylerClient = null;
 
 const FLYWHEEL_URL = 'http://127.0.0.1:18780/flywheel';
+const REQUEST_URL  = 'http://127.0.0.1:18780/request';  // unified pipeline (Phase 7 cutover)
 
 // ── Telegram group delivery ───────────────────────────────────────────────────
 
@@ -114,37 +115,34 @@ async function handleForge(client, projectLabel, row) {
     // Mark processing
     await updateRow(client, id, { status: 'processing', picked_up_at: new Date().toISOString() });
 
-    // Create flywheel job
-    const jobResp = await fetch(`${FLYWHEEL_URL}/jobs`, {
+    // Phase 7 cutover: forge channel routes to the unified pipeline (POST /request)
+    // instead of legacy /flywheel/jobs. Zeus classifies T1 vs T2 and runs the
+    // appropriate B3C flow. Result lands in framework mission store; Telegram
+    // group delivery (if any) is handled by the unified pipeline itself.
+    const reqResp = await fetch(REQUEST_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        title: body.split('\n')[0].slice(0, 80),
-        description: body,
-        submitter: from_agent,
+        text:    body,
+        channel: `forge · ${from_agent}`,
+        target:  'zeus',
       }),
     });
 
-    if (!jobResp.ok) {
-      const errText = await jobResp.text();
-      throw new Error(`create job ${jobResp.status}: ${errText}`);
+    if (!reqResp.ok) {
+      const errText = await reqResp.text();
+      throw new Error(`create request ${reqResp.status}: ${errText}`);
     }
 
-    const job = await jobResp.json();
-    log('Forge job created:', job.id);
+    const req = await reqResp.json();
+    log('Forge request created:', req.id);
 
-    // Wake Zeus — NO chat_id to prevent duplicate Telegram delivery.
-    // Flywheel result will be available via job status; bridge writes to mo_comms.
-    fetch(`${FLYWHEEL_URL}/wake-zeus`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ job_id: job.id, prompt: body }),
-    }).catch(err => log('wake-zeus error:', err.message));
-
-    // Mark delivered with job reference
+    // Mark delivered with request reference. The unified pipeline runs async;
+    // result will be streamed to the dashboard via WebSocket and delivered to
+    // the appropriate channel on completion.
     await updateRow(client, id, {
       status: 'delivered',
-      result: `Flywheel job created: ${job.id}`,
+      result: `Unified-pipeline request created: ${req.id}`,
       delivered_at: new Date().toISOString(),
     });
 
