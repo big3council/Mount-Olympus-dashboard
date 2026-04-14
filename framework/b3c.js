@@ -116,7 +116,8 @@ async function runTier1(requestId, userInput, channel, userId = null) {
 
   const response = await callZeus(
     `You are Zeus. Respond directly and personally to this message.\n\n${userInput}`,
-    requestId
+    requestId,
+    userId ? { userId } : {}
   );
 
   const elapsed = Date.now() - start;
@@ -147,6 +148,9 @@ async function runTier2(requestId, userInput, channel, userId = null) {
   updateMission(requestId, { id: requestId, status: 'council_initial', tier: 'T2', text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
   const t2CouncilInitial = [];
   const t2CouncilBackend = [];
+  // Per-user session options — thread into every council call so OpenClaw
+  // routes Tyler's threads separately and agents see a [Speaker:] prefix.
+  const userOpts = userId ? { userId } : {};
 
   // ── Council memory: load prior sessions (hybrid: per-user + institutional) ─
   const councilContext = loadCouncilContext(userId);
@@ -168,7 +172,8 @@ If the Council Memory block above shows relevant prior rulings, reference them w
 Do NOT prescribe what Poseidon or Hades should do. Do NOT divide the work. Simply open the floor by sharing your own perspective and inviting your peers to weigh in from their domains.
 
 Speak directly to the council. This is your opening statement — share your lens, then listen.`,
-    requestId
+    requestId,
+    userOpts
   ));
 
   const zeusFraming = zeusFrameRes.ok ? zeusFrameRes.result : '[Zeus unavailable for opening]';
@@ -189,7 +194,8 @@ ${zeusFraming}
 You are now hearing this request through your Financial/Social domain. What do you see? What social dynamics, economic forces, relationship networks, or financial considerations does this request involve? What is your independent read on it?
 
 Do not defer to Zeus or repeat what he said. Speak from your own domain with your own perspective. This is your voice in the council.`,
-      requestId
+      requestId,
+      userOpts
     )),
     callSafe(requestId, 'hades', 'council_initial', () => callHades(
       `You are Hades of the B3C Council. Zeus has opened the floor.
@@ -202,7 +208,8 @@ ${zeusFraming}
 You are now hearing this request through your Physical/Technical domain. What do you see? What systems, mechanisms, infrastructure, or technical realities does this request involve? What is your independent read on it?
 
 Do not defer to Zeus or repeat what he said. Speak from your own domain with your own perspective. This is your voice in the council.`,
-      requestId
+      requestId,
+      userOpts
     )),
   ]);
 
@@ -237,7 +244,8 @@ ${councilHistory}
 Review the full deliberation. Does the council have complete coverage of the request?
 If yes — respond starting with VOTE: APPROVE and state final task assignments for each member.
 If no — respond starting with VOTE: DELIBERATE and identify what needs resolving.`,
-      requestId
+      requestId,
+      userOpts
     ));
 
     const zeusVote = zeusVoteRes.ok ? zeusVoteRes.result : 'VOTE: APPROVE — proceeding with available council input.';
@@ -252,11 +260,13 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
       const [posRoundRes, hadRoundRes] = await Promise.all([
         callSafe(requestId, 'poseidon', 'council_initial', () => callPoseidon(
           `You are Poseidon. B3C deliberation round ${voteRound}.\n\nUSER REQUEST: ${userInput}\n\nCOUNCIL SO FAR:\n${councilHistory}\n\nZEUS:\n${zeusVote}\n\nRespond from your Financial/Social domain.`,
-          requestId
+          requestId,
+          userOpts
         )),
         callSafe(requestId, 'hades', 'council_initial', () => callHades(
           `You are Hades. B3C deliberation round ${voteRound}.\n\nUSER REQUEST: ${userInput}\n\nCOUNCIL SO FAR:\n${councilHistory}\n\nZEUS:\n${zeusVote}\n\nRespond from your Physical/Technical domain.`,
-          requestId
+          requestId,
+          userOpts
         )),
       ]);
 
@@ -291,15 +301,18 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
   const [zeusExecRes, posExecRes, hadExecRes] = await Promise.all([
     callSafe(requestId, 'zeus', 'execution', () => callZeus(
       `You are Zeus, executing your Spiritual/Intellectual domain work.\n\n${execBase}\n\nProduce your deliverable now. Your domain covers: philosophical framing, conceptual architecture, meaning and purpose, intellectual synthesis, the underlying "why" of this request. Go deep — this is real domain work, not a summary of the discussion. Deliver a complete, substantive Spiritual/Intellectual work product.`,
-      requestId
+      requestId,
+      userOpts
     )),
     callSafe(requestId, 'poseidon', 'execution', () => callPoseidon(
       `You are Poseidon, executing your Financial/Social domain work.\n\n${execBase}\n\nProduce your deliverable now. Your domain covers: economic analysis, market forces, social dynamics, relationship networks, financial considerations, the human systems and incentive structures at play. Go deep — this is real domain work, not a summary of the discussion. Deliver a complete, substantive Financial/Social work product.`,
-      requestId
+      requestId,
+      userOpts
     )),
     callSafe(requestId, 'hades', 'execution', () => callHades(
       `You are Hades, executing your Physical/Technical domain work.\n\n${execBase}\n\nProduce your deliverable now. Your domain covers: technical implementation, systems architecture, practical mechanics, infrastructure, tangible execution steps, the concrete "how it works." Go deep — this is real domain work, not a summary of the discussion. Deliver a complete, substantive Physical/Technical work product.`,
-      requestId
+      requestId,
+      userOpts
     )),
   ]);
 
@@ -379,7 +392,8 @@ ${quorumContext}
 Read all deliverables and quorum reports carefully. Assess whether together they fully answer the request. Voice your honest position to the council — what is working, what gaps exist if any.
 
 Then cast your vote: end your response with VOTE: AYE if you believe the combined work is complete and ready, or VOTE: REVISE if something needs rework (name specifically what and by whom).`,
-      requestId
+      requestId,
+      userOpts
     ));
 
     const zeusPosition = zeusRevRes.ok ? zeusRevRes.result : 'VOTE: AYE — proceeding to synthesis with available work.';
@@ -408,7 +422,8 @@ ${zeusPosition}
 Read all deliverables and quorum reports. From your Financial/Social domain perspective, does the combined output fully answer the request? Voice your honest assessment.
 
 Then cast your vote: end your response with VOTE: AYE if the work is complete and ready, or VOTE: REVISE if something is missing (name specifically what and by whom).`,
-        requestId
+        requestId,
+        userOpts
       )),
       callSafe(requestId, 'hades', 'review', () => callHades(
         `You are Hades, in the Backend B3C Council review.
@@ -431,7 +446,8 @@ ${zeusPosition}
 Read all deliverables and quorum reports. From your Physical/Technical domain perspective, does the combined output fully answer the request? Voice your honest assessment.
 
 Then cast your vote: end your response with VOTE: AYE if the work is complete and ready, or VOTE: REVISE if something is missing (name specifically what and by whom).`,
-        requestId
+        requestId,
+        userOpts
       )),
     ]);
 
@@ -458,7 +474,8 @@ USER REQUEST: ${userInput}
 ${synthCtx}
 
 Synthesize all available domain deliverables into a single coherent, integrated final response. Weave the Spiritual/Intellectual, Financial/Social, and Physical/Technical layers together. This is the council's delivered output — make it complete and authoritative.`,
-        requestId
+        requestId,
+        userOpts
       ));
 
       backendApproved = true;
@@ -476,19 +493,22 @@ Synthesize all available domain deliverables into a single coherent, integrated 
         combined.includes('poseidon')
           ? callSafe(requestId, 'poseidon', 'revision', () => callPoseidon(
               `You are Poseidon. The council has raised concerns.\n\nORIGINAL TASK:\n${execBase}\n\nYOUR PREVIOUS WORK:\n${pool.poseidon || '[none]'}\n\nCOUNCIL FEEDBACK:\n${allFeedback}\n\nRevise your Financial/Social deliverable to address the feedback.`,
-              requestId
+              requestId,
+              userOpts
             ))
           : Promise.resolve({ ok: false }),
         combined.includes('hades')
           ? callSafe(requestId, 'hades', 'revision', () => callHades(
               `You are Hades. The council has raised concerns.\n\nORIGINAL TASK:\n${execBase}\n\nYOUR PREVIOUS WORK:\n${pool.hades || '[none]'}\n\nCOUNCIL FEEDBACK:\n${allFeedback}\n\nRevise your Physical/Technical deliverable to address the feedback.`,
-              requestId
+              requestId,
+              userOpts
             ))
           : Promise.resolve({ ok: false }),
         combined.includes('zeus')
           ? callSafe(requestId, 'zeus', 'revision', () => callZeus(
               `You are Zeus. The council has raised concerns.\n\nORIGINAL TASK:\n${execBase}\n\nYOUR PREVIOUS WORK:\n${pool.zeus || '[none]'}\n\nCOUNCIL FEEDBACK:\n${allFeedback}\n\nRevise your Spiritual/Intellectual deliverable to address the feedback.`,
-              requestId
+              requestId,
+              userOpts
             ))
           : Promise.resolve({ ok: false }),
       ]);
@@ -505,7 +525,8 @@ Synthesize all available domain deliverables into a single coherent, integrated 
     const synthCtx = deliverableContext({ zeus: pool.zeus, poseidon: pool.poseidon, hades: pool.hades }, execFailures);
     const synthRes = await callSafe(requestId, "zeus", "synthesis", () => callZeus(
       `You are Zeus. The backend council has reached its maximum review rounds. Synthesize the best available deliverables into a final response now.\n\nUSER REQUEST: ${userInput}\n\n${synthCtx}\n\nDeliver a complete, authoritative response from whatever is available.`,
-      requestId
+      requestId,
+      userOpts
     ));
     finalOutput = synthRes.ok
       ? synthRes.result

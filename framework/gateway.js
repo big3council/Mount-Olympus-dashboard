@@ -80,6 +80,24 @@ function userSessionKey(node, userId) {
   return `user-${userKey}-${node}`;
 }
 
+// Map userId → display name so agents know *who* is speaking. Without this
+// prefix, Tyler's messages get answered as if they were from Carson because
+// each agent's system prompt hardcodes Carson as the default user. We inject
+// a small speaker header instead of rewriting every agent's identity file.
+function speakerLabel(userId) {
+  if (!userId) return null;
+  const raw = String(userId);
+  if (raw === '8150818650') return 'Carson';
+  if (raw === '874345067')  return 'Tyler';
+  return null;
+}
+
+function prefixSpeaker(prompt, userId) {
+  const name = speakerLabel(userId);
+  if (!name) return prompt;
+  return `[Speaker: ${name}]\n\n${prompt}`;
+}
+
 // ── Core Caller ──────────────────────────────────────────────────────────────
 
 /**
@@ -232,17 +250,20 @@ export async function callAgentStream({ node, prompt, model = 'openclaw', sessio
 
 export function callZeus(message, _requestId, opts = {}) {
   const sessionKey = opts.userId ? userSessionKey('zeus', opts.userId) : undefined;
-  return callAgent({ node: 'zeus', prompt: message, sessionKey });
+  const prompt = prefixSpeaker(message, opts.userId);
+  return callAgent({ node: 'zeus', prompt, sessionKey });
 }
 
 export function callPoseidon(message, _requestId, opts = {}) {
   const sessionKey = opts.userId ? userSessionKey('poseidon', opts.userId) : undefined;
-  return callAgent({ node: 'poseidon', prompt: message, sessionKey });
+  const prompt = prefixSpeaker(message, opts.userId);
+  return callAgent({ node: 'poseidon', prompt, sessionKey });
 }
 
 export function callHades(message, _requestId, opts = {}) {
   const sessionKey = opts.userId ? userSessionKey('hades', opts.userId) : undefined;
-  return callAgent({ node: 'hades', prompt: message, sessionKey });
+  const prompt = prefixSpeaker(message, opts.userId);
+  return callAgent({ node: 'hades', prompt, sessionKey });
 }
 
 export async function callGaia(message, _requestId, conversationMessages = null) {

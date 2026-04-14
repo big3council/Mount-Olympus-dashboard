@@ -1,7 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import OlympusView from "./OlympusView";
 import CouncilChamber from "./CouncilChamber";
-import FlywheelView from "./FlywheelView.jsx";
 import { FONTS, css } from "./styles";
 import {
   API_URL, WS_URL, NODE_HEALTH_TARGETS,
@@ -2187,7 +2186,7 @@ useEffect(() => {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {/* Top-mode toggle */}
             <div className="top-toggle">
-              {["council", "olympus", "record", "history"].map(v => (
+              {["council", "olympus", "record"].map(v => (
                 <button
                   key={v}
                   className={`top-toggle-btn ${topView === v ? "active" : ""}`}
@@ -2274,12 +2273,6 @@ useEffect(() => {
         {topView === "record" && (
           <div className="main-canvas" key="record">
             {renderGaiaTree()}
-          </div>
-        )}
-
-        {topView === "history" && (
-          <div className="main-canvas" key="history">
-            <FlywheelView />
           </div>
         )}
 
