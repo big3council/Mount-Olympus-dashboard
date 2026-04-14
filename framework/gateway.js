@@ -65,6 +65,21 @@ function makeSessionKey(node) {
   return `framework-${node}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Stable session key per (user, agent) pair. If OpenClaw threads
+// conversation history by session key, using a deterministic key here lets
+// each agent build up a genuine memory of each user across calls. If
+// OpenClaw ignores session keys, this is no worse than the random default.
+// Returns a stable key like 'user-carson-poseidon' or falls back to the
+// random per-call key for anonymous traffic.
+function userSessionKey(node, userId) {
+  if (!userId) return makeSessionKey(node);
+  const raw = String(userId);
+  const userKey = raw === '8150818650' ? 'carson'
+                : raw === '874345067'  ? 'tyler'
+                : raw.replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 32) || 'user';
+  return `user-${userKey}-${node}`;
+}
+
 // ── Core Caller ──────────────────────────────────────────────────────────────
 
 /**
@@ -210,17 +225,24 @@ export async function callAgentStream({ node, prompt, model = 'openclaw', sessio
 }
 
 // ── Convenience Exports (backward compatible) ────────────────────────────────
+//
+// Pass { userId } as the 3rd arg (or second-arg-as-options object) to get a
+// stable user-scoped session key. Without userId, each call uses a random
+// session key (old behavior).
 
-export function callZeus(message, _requestId) {
-  return callAgent({ node: 'zeus', prompt: message });
+export function callZeus(message, _requestId, opts = {}) {
+  const sessionKey = opts.userId ? userSessionKey('zeus', opts.userId) : undefined;
+  return callAgent({ node: 'zeus', prompt: message, sessionKey });
 }
 
-export function callPoseidon(message, _requestId) {
-  return callAgent({ node: 'poseidon', prompt: message });
+export function callPoseidon(message, _requestId, opts = {}) {
+  const sessionKey = opts.userId ? userSessionKey('poseidon', opts.userId) : undefined;
+  return callAgent({ node: 'poseidon', prompt: message, sessionKey });
 }
 
-export function callHades(message, _requestId) {
-  return callAgent({ node: 'hades', prompt: message });
+export function callHades(message, _requestId, opts = {}) {
+  const sessionKey = opts.userId ? userSessionKey('hades', opts.userId) : undefined;
+  return callAgent({ node: 'hades', prompt: message, sessionKey });
 }
 
 export async function callGaia(message, _requestId, conversationMessages = null) {

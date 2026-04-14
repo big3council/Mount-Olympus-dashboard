@@ -9,9 +9,73 @@
  */
 
 import fs from 'fs';
+import path from 'path';
 
 const ROUTING_CONTEXT_PATH = '/Volumes/olympus/pool/routing/t1-routing-context.md';
 const CONFIDENCE_THRESHOLD = 0.70;
+
+// Router short-term memory — last ~5 minutes of routing decisions per user.
+// Lets Haiku detect continuations ("Carson is mid-Poseidon thread, route back")
+// without carrying thread bodies around. Lives on Zeus disk, not NAS, because
+// it's hot short-term state.
+const ROUTER_STATE_DIR  = '/Users/zeus/olympus/framework/state';
+const ROUTER_STATE_FILE = path.join(ROUTER_STATE_DIR, 'router-recent.json');
+const ROUTER_WINDOW_MS  = 5 * 60 * 1000; // 5 minutes
+const ROUTER_MAX_PER_USER = 12;
+
+function readRouterState() {
+  try {
+    const raw = fs.readFileSync(ROUTER_STATE_FILE, 'utf8');
+    return JSON.parse(raw) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeRouterState(state) {
+  try {
+    fs.mkdirSync(ROUTER_STATE_DIR, { recursive: true });
+    fs.writeFileSync(ROUTER_STATE_FILE, JSON.stringify(state, null, 2));
+  } catch (err) {
+    console.warn('[classifier] failed to persist router state:', err.message);
+  }
+}
+
+function getRecentRouting(userKey) {
+  if (!userKey) return [];
+  const state = readRouterState();
+  const entries = state[userKey] || [];
+  const cutoff = Date.now() - ROUTER_WINDOW_MS;
+  return entries.filter(e => new Date(e.ts).getTime() >= cutoff);
+}
+
+function recordRoutingDecision(userKey, decision) {
+  if (!userKey) return;
+  const state = readRouterState();
+  const cutoff = Date.now() - ROUTER_WINDOW_MS;
+  const prev = (state[userKey] || []).filter(e => new Date(e.ts).getTime() >= cutoff);
+  prev.push({
+    tier:   decision.tier,
+    target: decision.agent || (decision.tier === 'T2' ? 'council' : null),
+    ts:     new Date().toISOString(),
+  });
+  // Keep at most N per user (oldest first trimmed).
+  state[userKey] = prev.slice(-ROUTER_MAX_PER_USER);
+  writeRouterState(state);
+}
+
+function formatRecentRoutingForPrompt(recent) {
+  if (!recent || recent.length === 0) return null;
+  // Collapse runs of the same target into a count: poseidon × 3.
+  const runs = [];
+  for (const e of recent) {
+    const last = runs[runs.length - 1];
+    if (last && last.target === e.target) last.count++;
+    else runs.push({ target: e.target, count: 1 });
+  }
+  const summary = runs.map(r => r.count > 1 ? `${r.target} × ${r.count}` : r.target).join(', ');
+  return `Recent routing for this user (last ${ROUTER_WINDOW_MS / 60000} min): ${summary}. Consider continuation unless the new message clearly pivots to a different domain.`;
+}
 
 // Pre-Haiku fast-path: short conversational prompts always route to Zeus T1.
 // Without this short-circuit, Haiku treats bare greetings as "no clear domain"
@@ -80,21 +144,30 @@ function readRoutingContext() {
  * Classify a prompt into T1 (smart solo) or T2 (full deliberative).
  *
  * @param {string} prompt — The user's request text
+ * @param {object} [opts]
+ * @param {string} [opts.userId] — user identifier (enables short-term router
+ *   memory for continuation detection)
  * @returns {Promise<{ tier: 'T1' | 'T2', agent: string | null, confidence: number }>}
  */
-export async function classifyJob(prompt) {
+export async function classifyJob(prompt, opts = {}) {
+  const userKey = opts.userId ? String(opts.userId) : null;
+
   // Pre-Haiku name-callout short-circuit — when the user explicitly addresses
   // a council member by name, route to that member T1 directly.
   const calledAgent = detectAgentCallout(prompt);
   if (calledAgent) {
+    const decision = { tier: 'T1', agent: calledAgent, confidence: 1.0 };
     console.log(`[classifier] '${String(prompt).slice(0, 60)}' → T1 → ${calledAgent} (1.00, name-callout fast-path)`);
-    return { tier: 'T1', agent: calledAgent, confidence: 1.0 };
+    recordRoutingDecision(userKey, decision);
+    return decision;
   }
 
   // Pre-Haiku conversational short-circuit — greetings + very short prompts.
   if (isConversational(prompt)) {
+    const decision = { tier: 'T1', agent: 'zeus', confidence: 1.0 };
     console.log(`[classifier] '${String(prompt).slice(0, 60)}' → T1 → zeus (1.00, conversational fast-path)`);
-    return { tier: 'T1', agent: 'zeus', confidence: 1.0 };
+    recordRoutingDecision(userKey, decision);
+    return decision;
   }
 
   const apiKey = process.env.ANTHROPIC_API_KEY;
@@ -109,13 +182,19 @@ export async function classifyJob(prompt) {
     return { tier: 'T2', agent: null, confidence: 0 };
   }
 
+  // Short-term router memory — surface the user's recent routing lane so
+  // Haiku can recognize continuations without the caller having to repeat a
+  // name. Nothing is injected if the user hasn't spoken in the last 5 min.
+  const recentRouting = getRecentRouting(userKey);
+  const recentBlock   = formatRecentRoutingForPrompt(recentRouting);
+
   const classifyPrompt = `You are a routing classifier for the B3C council system.
 
 ROUTING CONTEXT:
 ${routingContext}
 
 TASK: Classify this request. Determine if ONE council member can handle it alone (T1) or if it needs the full council (T2).
-
+${recentBlock ? `\nROUTER SHORT-TERM MEMORY:\n${recentBlock}\n` : ''}
 REQUEST TO CLASSIFY:
 ${prompt.slice(0, 1000)}
 
@@ -127,6 +206,9 @@ Rules:
 - Greetings, acknowledgments, small talk → T1 → zeus (confidence 1.0).
 - Simple factual or single-domain tasks → T1, pick the domain agent.
 - If T1 domain is unclear → T1 → zeus (zeus is the conversational default).
+- If Router Short-term Memory shows the user is already mid-thread with a
+  specific agent AND the new message doesn't clearly pivot to a different
+  domain, CONTINUE that same agent T1. Continuation beats fresh routing.
 - On T1: agent MUST be set; prefer confidence ≥ 0.70.
 - On T2: agent should be null. Only use T2 for multi-domain, strategic,
   comparative, long/complex, or War Room requests.
@@ -198,8 +280,10 @@ Rules:
       agent = 'zeus';
     }
 
-    console.log(`[classifier] '${prompt.slice(0, 60)}' → ${tier}${agent ? ' → ' + agent : ''} (${confidence.toFixed(2)})`);
-    return { tier, agent, confidence };
+    const decision = { tier, agent, confidence };
+    console.log(`[classifier] '${prompt.slice(0, 60)}' → ${tier}${agent ? ' → ' + agent : ''} (${confidence.toFixed(2)})${recentBlock ? ' [mem]' : ''}`);
+    recordRoutingDecision(userKey, decision);
+    return decision;
 
   } catch (err) {
     const msg = err.message || '';
@@ -208,6 +292,8 @@ Rules:
     } else {
       console.error('[classifier] Error:', msg, '— defaulting to T2');
     }
-    return { tier: 'T2', agent: null, confidence: 0 };
+    const fallback = { tier: 'T2', agent: null, confidence: 0 };
+    recordRoutingDecision(userKey, fallback);
+    return fallback;
   }
 }

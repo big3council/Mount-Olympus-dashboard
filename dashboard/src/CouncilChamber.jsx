@@ -763,7 +763,7 @@ export default function CouncilChamber({ nodeHealth = {}, classifying = false })
         color: classifying ? "var(--gold2)" : "rgba(200,180,140,0.4)",
         transition:"color 0.5s", textAlign:"center",
       }}>
-        {classifying ? "ZEUS IS CLASSIFYING \u00B7 \u00B7 \u00B7" : "B3C COUNCIL \u00B7 PRESENT AND WAITING"}
+        {classifying ? "ROUTER CLASSIFYING \u00B7 \u00B7 \u00B7" : "B3C COUNCIL \u00B7 PRESENT AND WAITING"}
       </div>
     </div>
   );

@@ -282,7 +282,7 @@ export async function enqueue(mission) {
   } else {
     // B3C: 2-tier classification via Haiku
     try {
-      const classification = await classifyJob(text);
+      const classification = await classifyJob(text, { userId });
       tier = classification.tier;   // 'T1' or 'T2'
       agent = classification.agent; // 'zeus', 'poseidon', 'hades', or null
     } catch {

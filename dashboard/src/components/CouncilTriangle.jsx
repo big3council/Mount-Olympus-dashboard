@@ -119,7 +119,7 @@ export default function CouncilTriangle({ classifying = false }) {
         textAlign: "center",
         transition: "color 0.4s",
       }}>
-        {classifying ? "ZEUS IS CLASSIFYING . . ." : "B3C COUNCIL · PRESENT AND WAITING"}
+        {classifying ? "ROUTER CLASSIFYING . . ." : "B3C COUNCIL · PRESENT AND WAITING"}
       </div>
     </div>
   );

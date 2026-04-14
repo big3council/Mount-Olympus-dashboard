@@ -5,6 +5,7 @@ import { classifyJob } from './classifier.js';
 import { observeMission } from './gaia.js';
 import { updateMission, writeFinding } from './mission-store.js';
 import { runAllQuorums } from './quorum-dispatch.js';
+import { loadCouncilContext, persistCouncilSession } from './council-memory.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
 // 2-tier system: T1 (Smart Solo) routes to one agent, T2 (Full Deliberative)
@@ -147,15 +148,22 @@ async function runTier2(requestId, userInput, channel, userId = null) {
   const t2CouncilInitial = [];
   const t2CouncilBackend = [];
 
+  // ── Council memory: load prior sessions (hybrid: per-user + institutional) ─
+  const councilContext = loadCouncilContext(userId);
+  const priorContextBlock = councilContext
+    ? `\n\nCOUNCIL MEMORY — prior deliberations carry forward:\n${councilContext}\n`
+    : '';
+
   broadcast({ type: 'stage_change', id: requestId, stage: 'council_initial' });
 
   // ── Zeus opening ──────────────────────────────────────────────────────────
   const zeusFrameRes = await callSafe(requestId, 'zeus', 'council_initial', () => callZeus(
     `You are Zeus, peer facilitator of the B3C Council. A new request has arrived.
 
-USER REQUEST: ${userInput}
-
+USER REQUEST: ${userInput}${priorContextBlock}
 Bring this request to the council table. Share your Spiritual/Intellectual perspective on it — what is the deeper meaning, the conceptual framing, the intellectual lens through which you see this request. What questions does it raise? What is the essential nature of what is being asked?
+
+If the Council Memory block above shows relevant prior rulings, reference them where they apply. The council speaks with institutional continuity.
 
 Do NOT prescribe what Poseidon or Hades should do. Do NOT divide the work. Simply open the floor by sharing your own perspective and inviting your peers to weigh in from their domains.
 
@@ -520,6 +528,20 @@ Synthesize all available domain deliverables into a single coherent, integrated 
     });
   } catch {}
 
+  // Council memory: persist this session for future T2 continuity.
+  try {
+    persistCouncilSession({
+      id:             requestId,
+      userId,
+      userInput,
+      finalOutput,
+      councilInitial: t2CouncilInitial,
+      councilBackend: t2CouncilBackend,
+      failures:       execFailures,
+      elapsedMs:      t2Elapsed,
+    });
+  } catch (err) { console.warn('[B3C] persistCouncilSession failed:', err.message); }
+
   updateMission(requestId, { status: 'delivered', elapsed: t2Elapsed, output: finalOutput.slice(0, 2000) });
   writeFinding(requestId, userInput, 'T2', 'council', finalOutput);
 
@@ -540,9 +562,11 @@ async function runT1Solo(requestId, userInput, channel, agent, userId = null) {
   const callers = { zeus: callZeus, poseidon: callPoseidon, hades: callHades };
   const callFn = callers[agent] || callZeus;
 
+  // Pass userId so gateway can thread the session per (user, agent).
   const response = await callFn(
     `You are ${agent.charAt(0).toUpperCase() + agent.slice(1)}. Respond directly and personally to this message.\n\n${userInput}`,
-    requestId
+    requestId,
+    userId ? { userId } : {}
   );
 
   const elapsed = Date.now() - start;
@@ -575,7 +599,7 @@ export async function runB3C(requestId, userInput, channel, preTier = null, user
 
   if (!tier) {
     try {
-      const classification = await classifyJob(userInput);
+      const classification = await classifyJob(userInput, { userId });
       tier = classification.tier === 'T1' ? 'T1' : 'T2';
       agent = classification.agent;
     } catch (err) {

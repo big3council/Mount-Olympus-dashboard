@@ -18,7 +18,7 @@ const AGENTS = {
 
 export async function runDirect(agentName, requestId, text, channel, userId = null) {
   const start = Date.now();
-  console.log(`[Direct] ${agentName} → id=${requestId}`);
+  console.log(`[Direct] ${agentName} → id=${requestId}${userId ? ` user=${userId}` : ''}`);
 
   broadcast({ type: 'agent_thought', id: requestId, agent: agentName, text: 'Processing...' });
 
@@ -26,7 +26,10 @@ export async function runDirect(agentName, requestId, text, channel, userId = nu
     const agent = AGENTS[agentName];
     if (!agent) throw new Error(`Unknown agent: ${agentName}`);
 
-    const response = await agent.call(text, requestId);
+    // Pass userId so the gateway uses a stable per-(user, agent) session key.
+    // If OpenClaw threads history by session key, each agent builds genuine
+    // per-user memory across T1 direct calls.
+    const response = await agent.call(text, requestId, userId ? { userId } : {});
 
     broadcast({
       type:    'request_complete',
