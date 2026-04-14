@@ -124,9 +124,14 @@ export async function runSmokeTest(requestId, head) {
 
   log(`${head} smoke test — ${sparks.length} Sparks`);
 
-  const results = await Promise.allSettled(
-    sparks.map(spark => callSpark(requestId, spark, 'Respond with exactly: READY', 'smoke_test'))
-  );
+  // Per-spark timing wrapper — captures latency for dashboard quorum health chips.
+  const timed = async (spark) => {
+    const t0 = Date.now();
+    const r = await callSpark(requestId, spark, 'Respond with exactly: READY', 'smoke_test');
+    return { ...r, latency_ms: Date.now() - t0 };
+  };
+
+  const results = await Promise.allSettled(sparks.map(timed));
 
   const online = results
     .filter(r => r.status === 'fulfilled' && r.value.ok)
@@ -134,6 +139,20 @@ export async function runSmokeTest(requestId, head) {
   const offline = results
     .filter(r => r.status === 'fulfilled' && !r.value.ok)
     .map(r => r.value.agent);
+
+  // Per-spark result map for dashboard quorum health chips (matches handler shape).
+  const ts = Date.now();
+  const sparkResults = {};
+  for (const r of results) {
+    if (r.status === 'fulfilled' && r.value) {
+      sparkResults[r.value.agent] = {
+        ok: r.value.ok,
+        latency_ms: r.value.latency_ms ?? null,
+        ts,
+      };
+    }
+  }
+  broadcast({ type: 'quorum_smoke_test', id: requestId, head, results: sparkResults });
 
   log(`${head} smoke: ${online.length} online, ${offline.length} offline`);
   return { head, online, offline };

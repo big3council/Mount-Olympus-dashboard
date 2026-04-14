@@ -128,7 +128,7 @@ export default function OlympusDashboard() {
 
 
   // ── Cinematic takeover lifecycle ─────────────────────────────────────────────
-  const isCinematicTier = mode === "tier2" || mode === "tier3";
+  const isCinematicTier = mode === "tier2";
 
   // Auto-open when a T2/T3 mission activates
   useEffect(() => {
@@ -534,14 +534,34 @@ useEffect(() => {
         }
 
         case "quorum_smoke_test": {
-          // Global smoke test results for quorum health chips.
-          // Event shape: { results: { zeus: { "Hermes": { ok, latency_ms, ts }, ... }, ... } }
-          setSmokeTestResults(msg.results ?? null);
-          if (msg.id) {
-            setMissions(prev => {
-              if (!prev[msg.id]) return prev;
-              return { ...prev, [msg.id]: { ...prev[msg.id], smokeTestResults: msg.results ?? null } };
-            });
+          // Backend emits one event per head with a per-spark map:
+          //   { type, id, head, results: { Hermes: { ok, latency_ms, ts }, ... } }
+          // Merge into the nested shape { head: { spark: {...} }, ... } so chips for
+          // all heads can live side-by-side without overwriting each other.
+          if (msg.head && msg.results) {
+            setSmokeTestResults(prev => ({ ...(prev || {}), [msg.head]: msg.results }));
+            if (msg.id) {
+              setMissions(prev => {
+                if (!prev[msg.id]) return prev;
+                const existing = prev[msg.id].smokeTestResults || {};
+                return {
+                  ...prev,
+                  [msg.id]: {
+                    ...prev[msg.id],
+                    smokeTestResults: { ...existing, [msg.head]: msg.results },
+                  },
+                };
+              });
+            }
+          } else if (msg.results) {
+            // Fallback: full-map replacement (old shape, if any emitter still uses it).
+            setSmokeTestResults(msg.results);
+            if (msg.id) {
+              setMissions(prev => {
+                if (!prev[msg.id]) return prev;
+                return { ...prev, [msg.id]: { ...prev[msg.id], smokeTestResults: msg.results } };
+              });
+            }
           }
           break;
         }
@@ -826,10 +846,10 @@ useEffect(() => {
     }
   }, [missions]);
 
-  // ── Auto-select panel when stage changes (tier3/tier2 only) ───────────────
+  // ── Auto-select panel when stage changes (tier2 only) ──────────────────
   useEffect(() => {
     if (!activeMission) { setSelectedNode(null); return; }
-    if (!["tier2", "tier3"].includes(mode)) { setSelectedNode(null); return; }
+    if (!mode === "tier2") { setSelectedNode(null); return; }
     if      (stage === "idle")            setSelectedNode(null);
     else if (stage === "council_initial") { setSelectedNode("council_initial"); setPanelTabMode("council"); }
     else if (stage === "execution")       { setSelectedNode("zeus_exec"); setPanelTabMode("council"); }
@@ -837,7 +857,7 @@ useEffect(() => {
     else if (stage === "done")            { setSelectedNode("output"); setPanelTabMode("council"); }
   }, [stage, activeMissionId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Node/connection state helpers (tier3) ─────────────────────────────────
+  // ── Node/connection state helpers ────────────────────────────────────────
   const getNodeState = (node) => {
     const stageOrder = ["idle", "council_initial", "execution", "council_backend", "done"];
     const nodeStages = { council_initial: 1, zeus_exec: 2, poseidon: 2, hades: 2, council_backend: 3, output: 4 };
@@ -988,8 +1008,8 @@ useEffect(() => {
     const m = missions[id];
     if (!m) return;
     setActiveMissionId(id);
-    const missionMode = m.uiMode ?? "tier3";
-    if (!["tier2", "tier3"].includes(missionMode)) { setSelectedNode(null); return; }
+    const missionMode = m.uiMode ?? "tier2";
+    if (!missionMode === "tier2") { setSelectedNode(null); return; }
     if      (m.stage === "done")             setSelectedNode("output");
     else if (m.stage === "council_initial")  setSelectedNode("council_initial");
     else if (m.stage === "execution")        setSelectedNode("zeus_exec");
@@ -1021,9 +1041,9 @@ useEffect(() => {
     return () => document.removeEventListener("mousedown", handler);
   }, [nodeHealthOpen]);
 
-  // ── Detail panel renderer (tier3) ─────────────────────────────────────────
+  // ── Detail panel renderer ────────────────────────────────────────────────
   const renderPanel = () => {
-    if (!selectedNode || !["tier2", "tier3"].includes(mode)) return null;
+    if (!selectedNode || !mode === "tier2") return null;
 
     const panels = {
       council_initial: {
@@ -1207,7 +1227,7 @@ useEffect(() => {
         <div className="queue-slot-pills">
           {(() => {
             const t1Count     = queueState.filter(q => q.status === "running" && q.tier === "TIER_1").length;
-            const councilCount = queueState.filter(q => q.status === "running" && (q.tier === "TIER_2" || q.tier === "TIER_3")).length;
+            const councilCount = queueState.filter(q => q.status === "running" && (q.tier === "TIER_2")).length;
             return (
               <>
                 <div className={`queue-slot-pill t1${t1Count > 0 ? " occupied" : ""}`}>
@@ -1232,7 +1252,7 @@ useEffect(() => {
               a.position - b.position
             )
             .map(q => {
-              const tierLabel = q.tier === "TIER_1" ? "T-I" : q.tier === "TIER_2" ? "T-II" : q.tier === "TIER_3" ? "T-III" : q.tier === "DIRECT" ? "DIR" : "";
+              const tierLabel = q.tier === "TIER_1" ? "T-I" : q.tier === "TIER_2" ? "T-II" : q.tier === "TIER_2" ? "T-III" : q.tier === "DIRECT" ? "DIR" : "";
               const userLabel = q.userId === "8150818650" ? "CARSON" : q.userId === "874345067" ? "TYLER" : "";
               return (
                 <div key={q.id} className="queue-item">
@@ -1409,7 +1429,7 @@ useEffect(() => {
       <>
         {renderSidebar()}
         {renderTier2Content()}
-        {/* Detail panel — same as Tier 3 */}
+        {/* Detail panel */}
         <div className={`detail-panel ${panel ? "" : "closed"}`}>
           {panel && (
             <>
@@ -1609,309 +1629,6 @@ useEffect(() => {
           )}
         </div>
       </>
-    );
-  };
-
-  // ── TIER 3 VIEW — Full mission control ────────────────────────────────────
-  const renderTier3 = () => {
-    const execStage = stage === "execution";
-    const execDone  = ["council_backend", "done"].includes(stage);
-    const panel     = renderPanel();
-
-    if (!activeMission) {
-      return (
-        <>
-          {renderSidebar()}
-          <CouncilChamber nodeHealth={nodeHealth} />
-        </>
-      );
-    }
-
-    return (
-      <>
-        {renderSidebar()}
-        {renderTier3Content()}
-        {/* Detail panel */}
-        <div className={`detail-panel ${panel ? "" : "closed"}`}>
-          {panel && (
-            <>
-              <div className="panel-header">
-                <div className="panel-title">{panelTabMode === "council" ? "B3C COUNCIL" : panel.title}</div>
-                <button className="panel-close" onClick={() => { setSelectedNode(null); setPanelTabMode("council"); }}>✕</button>
-              </div>
-              {/* Tab toggle */}
-              <div className="panel-tabs">
-                <button className={`panel-tab ${panelTabMode === "council" ? "active" : ""}`} onClick={() => setPanelTabMode("council")}>Council</button>
-                <button className={`panel-tab ${panelTabMode === "agent" ? "active" : ""}`} onClick={() => setPanelTabMode("agent")}>Agent</button>
-              </div>
-              <div className="panel-body">
-                {panelTabMode === "council" ? (
-                  <>
-                    <VoteStamps messages={[...(councilMessages || []), ...(councilBackendMessages || [])]} missionId={activeMissionId} />
-                    <div className="panel-section">
-                      <div className="panel-section-label">Council deliberation</div>
-                      <CouncilThread messages={[...(councilMessages || []), ...(councilBackendMessages || [])]} />
-                    </div>
-                  </>
-                ) : (
-                  panel.content
-                )}
-              </div>
-            </>
-          )}
-        </div>
-      </>
-    );
-  };
-
-  const renderTier3Content = () => {
-    const execStage = stage === "execution";
-    const execDone  = ["council_backend", "done"].includes(stage);
-    return (
-        <div className="flow-area pipeline-content">
-          <div className="flow-container">
-
-            <svg className="flow-svg" viewBox="0 0 960 860" preserveAspectRatio="xMidYMid meet" style={{ height: 860, position: "absolute", top: 0, left: 0 }}>
-              <path d="M 480 44 L 480 108"   className={`conn-line ${getConnState("council_initial")}`} />
-              <path d="M 480 262 L 480 326"  className={`conn-line ${stage === "execution" || execDone ? "active" : "idle"}`} />
-              <path d="M 249 452 L 249 490 L 480 490 L 480 520" className={`conn-line ${execDone ? "done" : "idle"}`} />
-              <path d="M 480 452 L 480 520"                      className={`conn-line ${execDone ? "done" : "idle"}`} />
-              <path d="M 711 452 L 711 490 L 480 490 L 480 520" className={`conn-line ${execDone ? "done" : "idle"}`} />
-              <path d="M 480 672 L 480 736"  className={`conn-line ${stage === "done" ? "done" : stage === "council_backend" ? "active" : "idle"}`} />
-
-              {stage === "council_initial" && (
-                <circle r="4" fill="var(--gold2)" style={{ filter: "drop-shadow(0 0 5px var(--gold2))" }}>
-                  <animateMotion dur="1s" repeatCount="indefinite" path="M 480 44 L 480 108" />
-                </circle>
-              )}
-              {stage === "execution" && (
-                <circle r="4" fill="var(--gold2)" style={{ filter: "drop-shadow(0 0 5px var(--gold2))" }}>
-                  <animateMotion dur="1s" repeatCount="indefinite" path="M 480 262 L 480 326" />
-                </circle>
-              )}
-            </svg>
-
-            <div className="flow-nodes">
-
-              {/* Request pill */}
-              <div className="flow-row">
-                <div style={{ padding: "10px 24px", background: "var(--bg3)", border: "1px solid var(--border2)", borderRadius: 4, fontSize: 12, color: activeRequest ? "var(--text)" : "var(--muted)", fontFamily: activeRequest ? "JetBrains Mono, monospace" : "Cinzel, serif", letterSpacing: activeRequest ? "0" : "0.15em", maxWidth: 400, textAlign: "center", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {activeRequest ? activeRequest.text : "↓ AWAITING REQUEST"}
-                </div>
-              </div>
-
-              <div className="spacer-sm" />
-
-              {/* B3C Initial Council */}
-              <div className="flow-row">
-                <div
-                  className={`council-node ${stage === "council_initial" ? "thinking" : ["execution","council_backend","done"].includes(stage) ? "done" : "idle"} ${selectedNode === "council_initial" ? "selected" : ""}`}
-                  onClick={() => setSelectedNode("council_initial")}
-                >
-                  <div className="council-header">
-                    <span className="council-title">B3C INITIAL COUNCIL</span>
-                    <div className="council-members">
-                      <span className="member-badge zeus-c">⚡</span>
-                      <span className="member-badge poseidon-c">🔱</span>
-                      <span className="member-badge hades-c">🏛</span>
-                    </div>
-                    {stage === "council_initial" && phaseElapsed !== null && (
-                      <span className="phase-timer-badge">{phaseElapsed}s</span>
-                    )}
-                  </div>
-                  {stage === "council_initial" && (() => {
-                    const activeSpeakers = ["zeus","poseidon","hades"].filter(a =>
-                      nodeStatus[`${a}:council_initial`]?.status === "working"
-                    );
-                    return activeSpeakers.length > 0 ? (
-                      <div className="council-speaker-row">
-                        ■ {activeSpeakers.map(s => s.toUpperCase()).join(", ")} SPEAKING
-                      </div>
-                    ) : null;
-                  })()}
-                  <div className="council-chat-preview">
-                    {councilMessages.filter(m => m.text.length > 15).slice(-2).map((msg, i) => (
-                      <div key={i} className="chat-line">
-                        <span className={`speaker ${msg.speaker}`}>{msg.speaker.toUpperCase()}:</span>
-                        {msg.text.slice(0, 80)}{msg.text.length > 80 ? "…" : ""}
-                      </div>
-                    ))}
-                    {councilMessages.length === 0 && (
-                      <div className="chat-line" style={{ color: "var(--dim)" }}>Awaiting council convene...</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="spacer-sm" />
-
-              {/* Execution row */}
-              <div className="flow-row" style={{ gap: 28 }}>
-                {[
-                  { key: "zeus_exec", agentKey: "zeus",     name: "ZEUS",     symbol: "⚡", role: "Spiritual / Intellectual", prog: progress.zeus },
-                  { key: "poseidon",  agentKey: "poseidon", name: "POSEIDON", symbol: "🔱", role: "Financial / Social",       prog: progress.poseidon },
-                  { key: "hades",     agentKey: "hades",    name: "HADES",    symbol: "🏛",  role: "Physical / Technical",    prog: progress.hades },
-                ].map(agent => {
-                  const execSt      = getExecStatus(agent.agentKey);
-                  const elapsed     = execElapsed(agent.agentKey);
-                  const deliverable = nodeTasks[agent.agentKey];
-
-                  // State for styling
-                  let nodeClass;
-                  if (execSt?.status === "failed")   nodeClass = "failed";
-                  else if (execSt?.status === "complete" || execDone) nodeClass = "done";
-                  else if (execSt?.status === "working" || execStage)  nodeClass = "thinking";
-                  else nodeClass = "idle";
-
-                  // Status icon
-                  let statusIcon;
-                  if (execSt?.status === "failed")   statusIcon = "✕";
-                  else if (nodeClass === "done")      statusIcon = "✓";
-                  else if (nodeClass === "thinking")  statusIcon = "■■■";
-                  else statusIcon = "○";
-
-                  // Role text below name
-                  let roleDisplay;
-                  if (execSt?.status === "failed") {
-                    roleDisplay = execSt.error?.slice(0, 60) || "Failed";
-                  } else if (deliverable) {
-                    roleDisplay = deliverable.slice(0, 80) + (deliverable.length > 80 ? "…" : "");
-                  } else {
-                    roleDisplay = agent.role;
-                  }
-
-                  return (
-                    <div key={agent.key}
-                      className={`agent-node ${nodeClass} ${selectedNode === agent.key ? "selected" : ""}`}
-                      onClick={() => { setSelectedNode(agent.key); setPanelTabMode('agent'); }}
-                    >
-                      <div className="node-header">
-                        <span className="node-symbol">{agent.symbol}</span>
-                        <span className={`node-status-icon ${nodeClass}`}>{statusIcon}</span>
-                      </div>
-                      <div className="node-name">{agent.name}</div>
-                      <div className="node-role" style={execSt?.status === "failed" ? { color: "#ff7070", fontSize: 10 } : {}}>
-                        {roleDisplay}
-                      </div>
-                      {elapsed !== null && (
-                        <div style={{ fontSize: 10, color: "var(--active)", fontFamily: "JetBrains Mono, monospace", marginTop: 4 }}>{elapsed}s</div>
-                      )}
-                      <div className="node-progress">
-                        <div className="node-progress-bar" style={{ width: execSt?.status === "failed" ? "100%" : `${agent.prog}%`, background: execSt?.status === "failed" ? "#ff5050" : undefined }} />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="spacer-sm" />
-
-              {/* B3C Backend Council */}
-              <div className="flow-row">
-                <div
-                  className={`council-node ${stage === "council_backend" ? "thinking" : stage === "done" ? "done" : "idle"} ${selectedNode === "council_backend" ? "selected" : ""}`}
-                  onClick={() => setSelectedNode("council_backend")}
-                >
-                  <div className="council-header">
-                    <span className="council-title">B3C BACKEND COUNCIL</span>
-                    <div className="council-members">
-                      <span className="member-badge zeus-c">⚡</span>
-                      <span className="member-badge poseidon-c">🔱</span>
-                      <span className="member-badge hades-c">🏛</span>
-                    </div>
-                    {stage === "council_backend" && phaseElapsed !== null && (
-                      <span className="phase-timer-badge">{phaseElapsed}s</span>
-                    )}
-                  </div>
-                  {stage === "council_backend" && (() => {
-                    const activeSpeakers = ["zeus","poseidon","hades"].filter(a =>
-                      nodeStatus[`${a}:review`]?.status === "working"
-                    );
-                    return activeSpeakers.length > 0 ? (
-                      <div className="council-speaker-row">
-                        ■ {activeSpeakers.map(s => s.toUpperCase()).join(", ")} REVIEWING
-                      </div>
-                    ) : null;
-                  })()}
-                  <div className="council-chat-preview">
-                    {councilBackendMessages.filter(m => m.text.length > 15).slice(-2).map((msg, i) => (
-                      <div key={i} className="chat-line">
-                        <span className={`speaker ${msg.speaker}`}>{msg.speaker.toUpperCase()}:</span>
-                        {msg.text.slice(0, 80)}{msg.text.length > 80 ? "…" : ""}
-                      </div>
-                    ))}
-                    {councilBackendMessages.length === 0 && (
-                      <div className="chat-line" style={{ color: "var(--dim)" }}>Awaiting review...</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="spacer-sm" />
-
-              {/* Output node */}
-              <div className="flow-row">
-                <div
-                  className={`agent-node ${stage === "done" ? "done" : "idle"} ${selectedNode === "output" ? "selected" : ""}`}
-                  style={{ width: 220, textAlign: "center" }}
-                  onClick={() => setSelectedNode("output")}
-                >
-                  <div className="node-header" style={{ justifyContent: "center" }}>
-                    <span className="node-symbol">✦</span>
-                  </div>
-                  <div className="node-name" style={{ textAlign: "center" }}>OUTPUT</div>
-                  <div className="node-role" style={{ textAlign: "center" }}>
-                    {stage === "done" && activeRequest?.channel
-                      ? `Delivered · ${activeRequest.channel}`
-                      : "Awaiting synthesis"}
-                  </div>
-                  <div className="node-progress">
-                    <div className="node-progress-bar" style={{ width: stage === "done" ? "100%" : "0%" }} />
-                  </div>
-                </div>
-              </div>
-
-              {zeusDiagnostic && (
-                <>
-                  <div className="spacer-sm" />
-                  <div className="flow-row">
-                    <div className="zeus-diagnostic" style={{ maxWidth: 640 }}>
-                      <div className="zeus-diagnostic-header">⚡ Zeus Diagnostic</div>
-                      <div className="zeus-diagnostic-meta">
-                        {zeusDiagnostic.agent?.toUpperCase()} · {zeusDiagnostic.phase} · Error: {zeusDiagnostic.error}
-                      </div>
-                      <div className="zeus-diagnostic-body">{zeusDiagnostic.diagnosis}</div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              {outputText && (
-                <>
-                  <div className="spacer-sm" />
-                  <div className="flow-row">
-                    <div className="output-text-block">
-                      <div className="output-text-header">
-                        <span style={{ fontSize: 16 }}>✦</span>
-                        <span>Synthesized Output</span>
-                        {runStats && (
-                          <span className="output-timing">
-                            {runStats.elapsed ? `${(runStats.elapsed / 1000).toFixed(1)}s` : ""}
-                            {runStats.councils ? ` · ${runStats.councils} councils` : ""}
-                            {activeMission?.tier ? ` · ${activeMission.tier}` : ""}
-                          </span>
-                        )}
-                      </div>
-                      <div className="output-text-body">{outputText}</div>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div style={{ height: 48 }} />
-            </div>
-          </div>
-        </div>
     );
   };
 
@@ -2351,10 +2068,12 @@ useEffect(() => {
   const renderCinematicTakeover = () => {
     if (!cinematicOpen || !activeMission) return null;
 
-    const tierLabel = activeMission.tier === "TIER_2" ? "TIER II" : activeMission.tier === "TIER_3" ? "TIER III" : activeMission.tier || "TIER";
+    const tierLabel = activeMission.tier === "TIER_1" ? "TIER I"
+                    : activeMission.tier === "TIER_2" ? "TIER II"
+                    : (activeMission.tier || "TIER");
 
-    // Reuse the existing mode view (renderTier2 or renderTier3) for the left panel
-    const leftContent = mode === "tier2" ? renderTier2() : renderTier3();
+    // Reuse the canonical Tier 2 view (full B3C pipeline + quorum panels) for the left panel
+    const leftContent = renderTier2();
 
     return (
       <div className="cinematic-takeover">
@@ -2412,7 +2131,7 @@ useEffect(() => {
       case "zeus_protocol": return renderDirect();
       case "poseidon":      return renderDirect();
       case "hades":         return renderDirect();
-      default:              return renderTier3(); // tier3
+      default:              return renderTier2();
     }
   };
 

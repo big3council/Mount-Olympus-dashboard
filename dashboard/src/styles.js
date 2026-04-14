@@ -780,6 +780,32 @@ export const css = `
   .spark-complete { border-color: rgba(94,232,176,0.25); }
   .spark-failed   { border-color: rgba(255,80,80,0.3); }
 
+  /* B3C-style badge + confidence on spark cards */
+  .spark-card-head { gap: 6px; }
+  .spark-card-badge {
+    font-family: 'Cinzel', serif; font-size: 7px; letter-spacing: 0.1em;
+    padding: 1px 5px; border: 1px solid var(--border); border-radius: 2px;
+    color: var(--muted); background: transparent;
+    text-transform: uppercase;
+  }
+  .spark-badge-working  { color: var(--active); border-color: rgba(240,192,96,0.4); background: rgba(240,192,96,0.06); }
+  .spark-badge-complete { color: var(--done); border-color: rgba(94,232,176,0.35); background: rgba(94,232,176,0.05); }
+  .spark-badge-failed   { color: #ff8080; border-color: rgba(255,80,80,0.35); background: rgba(255,80,80,0.05); }
+  .spark-card-confidence {
+    margin-left: auto;
+    font-family: 'JetBrains Mono', monospace; font-size: 8px; color: var(--gold2);
+    letter-spacing: 0;
+  }
+  .spark-card-deliverable {
+    font-size: 9px; line-height: 1.55; color: var(--text);
+    opacity: 0.85; margin: 3px 0 4px;
+    padding-bottom: 3px; border-bottom: 1px dashed var(--border);
+  }
+  .spark-card-finding {
+    font-size: 9.5px; line-height: 1.6; color: var(--text);
+    margin-top: 2px;
+  }
+
   .quorum-backend { display: flex; flex-direction: column; gap: 6px; }
   .quorum-backend-msg { display: flex; gap: 8px; font-size: 10px; line-height: 1.5; }
   .quorum-backend-speaker { font-family: 'Cinzel', serif; letter-spacing: 0.08em; color: var(--gold2); min-width: 80px; flex-shrink: 0; font-size: 9px; }

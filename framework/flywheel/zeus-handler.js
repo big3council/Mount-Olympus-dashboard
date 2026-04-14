@@ -1,7 +1,7 @@
 // ~/olympus/framework/flywheel/zeus-handler.js
 // Mount Olympus — Zeus Execution Handler
 // Single-execution module: called once per job via /flywheel/wake-zeus.
-// Zeus classifies → handles trivial directly OR orchestrates standard/strategic
+// Zeus orchestrates the B3C pipeline for every flywheel job
 // through the B3C council pipeline (plan → ratify → dispatch → synthesize → deliver).
 
 import fs from 'fs';
@@ -116,18 +116,12 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       'zeus',
       'You are Zeus, orchestrator of the B3C council.',
       [
-        'Classify this build job and write a routing plan.',
+        'Plan this build job: name the council heads involved and the work packages.',
         '',
         `Job: ${prompt}`,
         '',
-        'routing_class:',
-        '- trivial: simple factual lookup, single question, Zeus handles alone immediately',
-        '- standard: research, analysis, comparison, drafting — needs quorum members, Poseidon and Hades ratify',
-        '- strategic: architecture decisions, major plans — full B3C unanimous ratification, no timeout',
-        '',
         'Respond in JSON only:',
         '{',
-        '  "routing_class": "trivial" | "standard" | "strategic",',
         '  "zeus_assessment": "string",',
         '  "council_heads_involved": ["string"],',
         '  "work_packages": [{ "assigned_to": "string", "owned_by": "string", "brief": "string" }]',
@@ -138,47 +132,23 @@ export async function executeJob({ job_id, prompt, chat_id }) {
         classifyTimeout,
       ]);
     } catch (e) {
-      log('classification timed out or failed:', e.message, '— defaulting to standard');
+      log('classification timed out or failed:', e.message, '— continuing with default plan');
       classifyResponse = '';
     }
 
     log('classification raw:', classifyResponse.slice(0, 300));
 
     const classification = parseJsonResponse(classifyResponse) || {
-      routing_class: 'standard',
       zeus_assessment: classifyResponse,
       council_heads_involved: ['zeus', 'poseidon', 'hades'],
       work_packages: [{ assigned_to: 'hermes', owned_by: 'zeus', brief: prompt }],
     };
 
-    const routingClass = classification.routing_class || 'standard';
-    log('classified as:', routingClass);
-
     // ── STEP C: Update job ────────────────────────────────────────────────────
-    await patchJob(job_id, {
-      routing_class: routingClass,
-      status: routingClass === 'trivial' ? 'executing' : 'planning',
-    });
+    await patchJob(job_id, { status: 'planning' });
 
-    // ── STEP D: TRIVIAL — Zeus handles directly ──────────────────────────────
-    if (routingClass === 'trivial') {
-      log('trivial — Zeus handling directly');
-      const response = await openclawCall(
-        'zeus',
-        'You are Zeus. Answer this request directly and concisely. Keep your response under 1500 characters. No padding, no preamble — just the answer.',
-        prompt,
-        `zeus-trivial-${job_id.slice(-8)}-${Date.now()}`
-      );
-      log('trivial response length:', response.length);
-
-      await patchJob(job_id, { status: 'delivered' });
-      await sendTelegram(chat_id, response);
-      log('=== TRIVIAL JOB DELIVERED ===');
-      return;
-    }
-
-    // ── STEP E: STANDARD / STRATEGIC — full B3C pipeline ─────────────────────
-    log(routingClass, '— initiating B3C pipeline');
+    // ── STEP D: Initiate B3C pipeline (single canonical path) ────────────────
+    log('initiating B3C pipeline');
 
     // E1: Create routing plan
     const workPackages = classification.work_packages?.length

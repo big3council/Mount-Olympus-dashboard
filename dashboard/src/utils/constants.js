@@ -15,19 +15,17 @@ export function targetToMode(target) {
     HADES:         "hades",
     GAIA:          "gaia",
   };
-  return map[target] || "tier3";
+  return map[target] || "tier2";
 }
 
 export function tierToMode(tier) {
   if (tier === "TIER_1") return "tier1";
-  if (tier === "TIER_2") return "tier2";
-  return "tier3";
+  return "tier2";  // anything else falls through to the full B3C deliberative view
 }
 
 export const MODE_BADGE_LABELS = {
   tier1:         "TIER I",
   tier2:         "TIER II",
-  tier3:         "TIER III",
   zeus_protocol: "ZEUS PROTOCOL",
   poseidon:      "POSEIDON",
   hades:         "HADES",

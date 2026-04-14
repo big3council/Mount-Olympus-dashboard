@@ -3,10 +3,10 @@
  *
  * Concurrency model:
  *   TIER_1: always runs immediately — no queue, no acknowledgment
- *   TIER_2 + TIER_3: share ONE council slot — one at a time
+ *   TIER_2: share ONE council slot — one at a time
  *   DIRECT: 3 concurrent (zeus_protocol, poseidon, hades, gaia)
  *
- * When a TIER_2 or TIER_3 mission cannot start immediately, it is queued
+ * When a TIER_2 mission cannot start immediately, it is queued
  * and Zeus sends an instant acknowledgment with queue position + estimated wait.
  * Zeus also reviews the full queue after every new addition and may reorder.
  */
@@ -20,7 +20,7 @@ import { runDirectGaia } from './gaia.js';
 import { callZeus } from './gateway.js';
 
 // ── Concurrency limits ────────────────────────────────────────────────────────
-const COUNCIL_LIMIT = 1;  // TIER_2 + TIER_3 share one council slot
+const COUNCIL_LIMIT = 1;  // TIER_2 share one council slot
 const DIRECT_LIMIT  = 3;  // poseidon, hades, gaia, ZEUS PROTOCOL
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -31,7 +31,7 @@ const cancelledIds = new Set(); // ids marked cancelled
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function effectiveTier(mission) {
-  return mission.tier; // TIER_1 | TIER_2 | TIER_3 | DIRECT
+  return mission.tier; // TIER_1 | TIER_2 | DIRECT
 }
 
 function runningCount(tier) {
@@ -42,12 +42,12 @@ function runningCount(tier) {
   return n;
 }
 
-// Count of T2/TIER_2/TIER_3 missions currently running (share one council slot)
+// Count of T2/TIER_2 missions currently running (share one council slot)
 function councilRunningCount() {
   let n = 0;
   for (const [, entry] of running) {
     const t = effectiveTier(entry.mission);
-    if (t === 'T2' || t === 'TIER_2' || t === 'TIER_3') n++;
+    if (t === 'T2' || t === 'TIER_2') n++;
   }
   return n;
 }
@@ -55,11 +55,11 @@ function councilRunningCount() {
 function hasOpenSlot(tier) {
   if (tier === 'T1' || tier === 'TIER_1') return true;        // always instant
   if (tier === 'DIRECT') return runningCount('DIRECT') < DIRECT_LIMIT;
-  return councilRunningCount() < COUNCIL_LIMIT;               // T2/TIER_2/TIER_3 share
+  return councilRunningCount() < COUNCIL_LIMIT;               // T2/TIER_2 share
 }
 
 // Find index of next pending mission that has an open slot.
-// For TIER_2/TIER_3: only one council slot exists — pick the first eligible one.
+// For TIER_2: only one council slot exists — pick the first eligible one.
 function nextEligibleIndex() {
   for (let i = 0; i < pending.length; i++) {
     if (hasOpenSlot(effectiveTier(pending[i]))) return i;
@@ -75,8 +75,8 @@ function broadcastQueue() {
 
   const pendingItems = pending.map((m, i) => {
     let estimatedWait;
-    if (m.tier === 'TIER_2' || m.tier === 'TIER_3') {
-      const avgMin = m.tier === 'TIER_3' ? 8 : 3;
+    if (m.tier === 'TIER_2') {
+      const avgMin = 8;
       estimatedWait = `~${councilAhead * avgMin} min`;
       councilAhead++;
     }
@@ -291,7 +291,7 @@ export async function enqueue(mission) {
     // Bail if cancelled during classification
     if (cancelledIds.has(id)) return;
     // Map to legacy tier name for dashboard
-    const dashTier = tier === 'T1' ? 'TIER_1' : 'TIER_3';
+    const dashTier = tier === 'T1' ? 'TIER_1' : 'TIER_2';
     broadcast({ type: 'tier_classified', id, tier: dashTier });
     console.log(`[Queue] ${id} classified as ${tier}${agent ? ' → ' + agent : ''}`);
   }
@@ -325,11 +325,11 @@ export async function enqueue(mission) {
     return;
   }
 
-  // ── T2 / TIER_2 / TIER_3: shared council slot ─────────────────────────────
+  // ── T2 / TIER_2: shared council slot ─────────────────────────────
   // Start immediately only if the council slot is free AND no council missions
   // are already pending (fairness — don't skip the queue).
   const councilPendingCount = pending.filter(
-    m => m.tier === 'T2' || m.tier === 'TIER_2' || m.tier === 'TIER_3'
+    m => m.tier === 'T2' || m.tier === 'TIER_2'
   ).length;
 
   if (councilRunningCount() < COUNCIL_LIMIT && councilPendingCount === 0) {
@@ -344,7 +344,7 @@ export async function enqueue(mission) {
   // Compute queue position and estimated wait for the acknowledgment.
   const queuePosition = councilPendingCount + 1;  // 1-indexed in council queue
   const councilAhead  = councilRunningCount() + councilPendingCount; // missions before this one
-  const avgMin        = (tier === 'T2' || tier === 'TIER_3') ? 8 : 3;
+  const avgMin        = 8;
   const estimatedMin  = councilAhead * avgMin;
   const estimatedWait = `~${estimatedMin} min`;
   const ackText       = `Got it — you're #${queuePosition} in queue. Estimated wait: ${estimatedWait}. I'll have the council on it shortly.`;

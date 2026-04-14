@@ -69,12 +69,9 @@ const router = express.Router();
 
 // ---- 1. POST /jobs -------------------------------------------------------
 router.post('/jobs', (req, res) => {
-  const { title, description, submitter, routing_class = 'standard' } = req.body || {};
+  const { title, description, submitter } = req.body || {};
   if (!title || !submitter) {
     return res.status(400).json({ error: 'title and submitter required' });
-  }
-  if (!['trivial', 'standard', 'strategic', 'pending_classification'].includes(routing_class)) {
-    return res.status(400).json({ error: 'routing_class must be trivial|standard|strategic|pending_classification' });
   }
 
   const id = `job-${crypto.randomUUID()}`;
@@ -83,7 +80,6 @@ router.post('/jobs', (req, res) => {
     title,
     description: description || '',
     submitter,
-    routing_class,
     status: 'submitted',
     routing_plan_id: null,
     work_package_ids: [],
@@ -91,31 +87,6 @@ router.post('/jobs', (req, res) => {
     updated_at: nowIso(),
   };
   writeJson(DIRS.jobs, id, job);
-
-  // Trivial jobs skip routing plans — create a WorkPackage directly.
-  // pending_classification jobs skip this too — Zeus classifies and handles.
-  if (routing_class === 'trivial') {
-    const wpId = `wp-${crypto.randomUUID()}`;
-    const wp = {
-      id: wpId,
-      job_id: id,
-      plan_id: null,
-      plan_version: 0,
-      assigned_to: null,
-      scope: { summary: title, details: description || '' },
-      status: 'open',
-      signals: [],
-      created_at: nowIso(),
-      updated_at: nowIso(),
-      accepted_at: null,
-      returned_at: null,
-    };
-    writeJson(DIRS.work_packages, wpId, wp);
-    job.work_package_ids.push(wpId);
-    job.status = 'awaiting_accept';
-    job.updated_at = nowIso();
-    writeJson(DIRS.jobs, id, job);
-  }
 
   res.status(201).json(job);
 });
@@ -131,9 +102,6 @@ router.get('/jobs/:id', (req, res) => {
 router.post('/jobs/:id/routing_plan', (req, res) => {
   const job = readJson(DIRS.jobs, req.params.id);
   if (!job) return res.status(404).json({ error: 'job not found' });
-  if (job.routing_class === 'trivial') {
-    return res.status(400).json({ error: 'trivial jobs skip routing plans' });
-  }
 
   const { proposed_by, steps } = req.body || {};
   if (!proposed_by || !Array.isArray(steps) || steps.length === 0) {
@@ -433,11 +401,11 @@ router.post('/findings/:id/approve', (req, res) => {
   res.json(finding);
 });
 
-// ---- PATCH /jobs/:id — update job fields (status, routing_class, etc.) ----
+// ---- PATCH /jobs/:id — update job fields (status, routing_plan_id) ----
 router.patch('/jobs/:id', (req, res) => {
   const job = readJson(DIRS.jobs, req.params.id);
   if (!job) return res.status(404).json({ error: 'job not found' });
-  const allowed = ['status', 'routing_class', 'routing_plan_id'];
+  const allowed = ['status', 'routing_plan_id'];
   for (const key of allowed) {
     if (req.body[key] !== undefined) job[key] = req.body[key];
   }

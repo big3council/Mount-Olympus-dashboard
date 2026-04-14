@@ -44,7 +44,11 @@ export default function QuorumPanel({ head, mode, quorumState, smokeTestResults 
           </div>
           <div className="quorum-spark-grid">
             {spark_returns.map((s, i) => (
-              <SparkCard key={`${s.spark}-${i}`} entry={s} />
+              <SparkCard
+                key={`${s.spark}-${i}`}
+                entry={s}
+                assignment={assignments.find(a => a.spark === s.spark) || null}
+              />
             ))}
           </div>
         </div>
@@ -67,19 +71,49 @@ export default function QuorumPanel({ head, mode, quorumState, smokeTestResults 
   );
 }
 
-function SparkCard({ entry }) {
+// SparkCard — mirrors the B3C execution card pattern.
+// Header: name + status badge + optional confidence score.
+// Body (priority cascade): failed → error, else deliverable assignment,
+// then finding output, with "working…" fallback when nothing has returned yet.
+function SparkCard({ entry, assignment }) {
   const status = entry.status || "complete";
   const classes = `spark-card spark-${status}`;
+  const deliverable = assignment?.task || assignment?.text || null;
+  const finding = entry.output ? String(entry.output) : null;
+
+  // Confidence may ride on entry.confidence (0-1 or 0-100). Normalize to percent.
+  const rawConf = entry.confidence ?? entry.score ?? null;
+  const confidencePct = rawConf == null
+    ? null
+    : rawConf > 1
+      ? Math.round(rawConf)
+      : Math.round(rawConf * 100);
+
+  const badgeLabel = status === "failed"   ? "FAILED"
+                  : status === "working"   ? "WORKING"
+                  : status === "complete"  ? "COMPLETE"
+                  : null;
+
   return (
     <div className={classes}>
       <div className="spark-card-head">
         <span className="spark-card-name">{entry.spark}</span>
-        <span className={`spark-card-status-dot spark-dot-${status}`} />
+        {badgeLabel && <span className={`spark-card-badge spark-badge-${status}`}>{badgeLabel}</span>}
+        {confidencePct != null && (
+          <span className="spark-card-confidence" title={`Confidence ${confidencePct}%`}>
+            {confidencePct}%
+          </span>
+        )}
       </div>
+      {deliverable && (
+        <div className="spark-card-deliverable">{deliverable}</div>
+      )}
       {entry.error ? (
         <div className="spark-card-error">{entry.error}</div>
-      ) : entry.output ? (
-        <div className="spark-card-output">{String(entry.output).slice(0, 220)}{String(entry.output).length > 220 ? "…" : ""}</div>
+      ) : finding ? (
+        <div className="spark-card-finding">
+          {finding.length > 280 ? finding.slice(0, 280) + "…" : finding}
+        </div>
       ) : (
         <div className="spark-card-pending">working…</div>
       )}
