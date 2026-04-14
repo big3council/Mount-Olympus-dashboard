@@ -73,7 +73,6 @@ bot.on('message', async (msg) => {
         title,
         description,
         submitter: sender,
-        routing_class: 'pending_classification',
       }),
     });
 

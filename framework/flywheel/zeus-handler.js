@@ -1,119 +1,27 @@
 // ~/olympus/framework/flywheel/zeus-handler.js
 // Mount Olympus — Zeus Execution Handler
 // Single-execution module: called once per job via /flywheel/wake-zeus.
-// Zeus classifies → handles trivial directly OR orchestrates standard/strategic
+// Zeus orchestrates the B3C pipeline for every flywheel job
 // through the B3C council pipeline (plan → ratify → dispatch → synthesize → deliver).
 
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { callAgent as gwCallAgent } from '../gateway.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const FLYWHEEL_URL  = 'http://127.0.0.1:18780/flywheel';
-const ZEUS_OPENCLAW = 'http://127.0.0.1:18789/v1/chat/completions';
-
-// ── Routing Knowledge Base ────────────────────────────────────────────────────
-const ROUTING_KB_PATH = '/Volumes/olympus/pool/routing/quorum-knowledge.json';
-const FINDINGS_DIR = '/Volumes/olympus/pool/findings';
-function loadRoutingKB() {
-  try { return JSON.parse(fs.readFileSync(ROUTING_KB_PATH, 'utf8')); } catch { return null; }
-}
-function getRoutingContext() {
-  const kb = loadRoutingKB();
-  if (!kb) return '';
-  return kb.quorum_members.map(m =>
-    m.id + ' (' + m.council + '): ' + m.domain + ' — ' + m.strengths
-  ).join('\n');
-}
-
-function writeFinding(jobId, title, routingClass, synthesis) {
-  try {
-    fs.mkdirSync(FINDINGS_DIR, { recursive: true });
-    const finding = {
-      job_id: jobId,
-      title,
-      routing_class: routingClass,
-      synthesis: synthesis.slice(0, 2000),
-      created_at: new Date().toISOString(),
-    };
-    fs.writeFileSync(
-      path.join(FINDINGS_DIR, jobId + '.json'),
-      JSON.stringify(finding, null, 2)
-    );
-    log('finding saved:', jobId);
-  } catch (e) {
-    log('finding write error:', e.message);
-  }
-}
-
-function getRecentFindings(limit = 5) {
-  try {
-    if (!fs.existsSync(FINDINGS_DIR)) return '';
-    const files = fs.readdirSync(FINDINGS_DIR)
-      .filter(f => f.endsWith('.json'))
-      .map(f => {
-        const fp = path.join(FINDINGS_DIR, f);
-        const stat = fs.statSync(fp);
-        return { path: fp, mtime: stat.mtimeMs };
-      })
-      .sort((a, b) => b.mtime - a.mtime)
-      .slice(0, limit);
-    if (files.length === 0) return '';
-    return files.map(f => {
-      try {
-        const d = JSON.parse(fs.readFileSync(f.path, 'utf8'));
-        return d.title + ' (' + d.routing_class + '): ' + (d.synthesis || '').slice(0, 200);
-      } catch { return ''; }
-    }).filter(Boolean).join('\n');
-  } catch { return ''; }
-}
-
 const BOT_TOKEN     = process.env.BUILD_BOT_TOKEN || '';
-
-// Each gateway has its own auth token — loaded from .env.
-const TOKENS = {
-  zeus:     process.env.ZEUS_OPENCLAW_TOKEN || '',
-  poseidon: process.env.POSEIDON_OPENCLAW_TOKEN || '',
-  hades:    process.env.HADES_OPENCLAW_TOKEN || '',
-  quorum:   process.env.OPENCLAW_TOKEN || '',  // shared across all Sparks
-};
-
-const COUNCIL_ENDPOINTS = {
-  poseidon: { url: 'http://192.168.1.12:18789/v1/chat/completions', token: TOKENS.poseidon },
-  hades:    { url: 'http://192.168.1.13:18789/v1/chat/completions', token: TOKENS.hades },
-};
 
 const log = (...args) => console.log('[zeus-handler]', new Date().toISOString(), ...args);
 
 // ---------------------------------------------------------------------------
-// OpenClaw chat call (OpenAI-compatible)
+// OpenClaw chat call — delegates to unified gateway.js
 // ---------------------------------------------------------------------------
-async function openclawCall(endpoint, systemPrompt, userMessage, sessionKey, token) {
-  const messages = [];
-  if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
-  messages.push({ role: 'user', content: userMessage });
-
-  const authToken = token || TOKENS.zeus; // default to Zeus for local calls
-  const resp = await fetch(endpoint, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${authToken}`,
-      'x-openclaw-scopes': 'operator.write',
-      'x-openclaw-session-key': sessionKey,
-    },
-    body: JSON.stringify({ model: 'openclaw', messages, stream: false }),
-  });
-
-  if (!resp.ok) {
-    const body = await resp.text().catch(() => '(no body)');
-    throw new Error(`openclaw ${resp.status} at ${endpoint}: ${body.slice(0, 200)}`);
-  }
-
-  const data = await resp.json();
-  return data.choices?.[0]?.message?.content || '';
+async function openclawCall(node, systemPrompt, userMessage, sessionKey) {
+  return gwCallAgent({ node, systemPrompt, prompt: userMessage, sessionKey });
 }
 
 // ---------------------------------------------------------------------------
@@ -205,27 +113,15 @@ export async function executeJob({ job_id, prompt, chat_id }) {
     try {
       classifyResponse = await Promise.race([
         openclawCall(
-      ZEUS_OPENCLAW,
+      'zeus',
       'You are Zeus, orchestrator of the B3C council.',
       [
-        'Classify this build job and write a routing plan.',
-        '',
-        'Available quorum members and their domains:',
-        getRoutingContext(),
-        '',
-        'Recent findings from past jobs (for context):',
-        getRecentFindings(),
+        'Plan this build job: name the council heads involved and the work packages.',
         '',
         `Job: ${prompt}`,
         '',
-        'routing_class:',
-        '- trivial: simple factual lookup, single question, Zeus handles alone immediately',
-        '- standard: research, analysis, comparison, drafting — needs quorum members, Poseidon and Hades ratify',
-        '- strategic: architecture decisions, major plans — full B3C unanimous ratification, no timeout',
-        '',
         'Respond in JSON only:',
         '{',
-        '  "routing_class": "trivial" | "standard" | "strategic",',
         '  "zeus_assessment": "string",',
         '  "council_heads_involved": ["string"],',
         '  "work_packages": [{ "assigned_to": "string", "owned_by": "string", "brief": "string" }]',
@@ -236,48 +132,23 @@ export async function executeJob({ job_id, prompt, chat_id }) {
         classifyTimeout,
       ]);
     } catch (e) {
-      log('classification timed out or failed:', e.message, '— defaulting to standard');
+      log('classification timed out or failed:', e.message, '— continuing with default plan');
       classifyResponse = '';
     }
 
     log('classification raw:', classifyResponse.slice(0, 300));
 
     const classification = parseJsonResponse(classifyResponse) || {
-      routing_class: 'standard',
       zeus_assessment: classifyResponse,
       council_heads_involved: ['zeus', 'poseidon', 'hades'],
       work_packages: [{ assigned_to: 'hermes', owned_by: 'zeus', brief: prompt }],
     };
 
-    const routingClass = classification.routing_class || 'standard';
-    log('classified as:', routingClass);
-
     // ── STEP C: Update job ────────────────────────────────────────────────────
-    await patchJob(job_id, {
-      routing_class: routingClass,
-      status: routingClass === 'trivial' ? 'executing' : 'planning',
-    });
+    await patchJob(job_id, { status: 'planning' });
 
-    // ── STEP D: TRIVIAL — Zeus handles directly ──────────────────────────────
-    if (routingClass === 'trivial') {
-      log('trivial — Zeus handling directly');
-      const response = await openclawCall(
-        ZEUS_OPENCLAW,
-        'You are Zeus. Answer this request directly and concisely. Keep your response under 1500 characters. No padding, no preamble — just the answer.',
-        prompt,
-        `zeus-trivial-${job_id.slice(-8)}-${Date.now()}`
-      );
-      log('trivial response length:', response.length);
-
-      await patchJob(job_id, { status: 'delivered' });
-      await sendTelegram(chat_id, response);
-      writeFinding(job_id, job.title, 'trivial', response);
-      log('=== TRIVIAL JOB DELIVERED ===');
-      return;
-    }
-
-    // ── STEP E: STANDARD / STRATEGIC — full B3C pipeline ─────────────────────
-    log(routingClass, '— initiating B3C pipeline');
+    // ── STEP D: Initiate B3C pipeline (single canonical path) ────────────────
+    log('initiating B3C pipeline');
 
     // E1: Create routing plan
     const workPackages = classification.work_packages?.length
@@ -313,15 +184,14 @@ export async function executeJob({ job_id, prompt, chat_id }) {
     ].join('\n');
 
     await Promise.allSettled(
-      Object.entries(COUNCIL_ENDPOINTS).map(async ([head, { url: endpoint, token }]) => {
+      ['poseidon', 'hades'].map(async (head) => {
         try {
           log('requesting ratification from', head);
           const resp = await openclawCall(
-            endpoint,
+            head,
             `You are ${head.charAt(0).toUpperCase() + head.slice(1)}, council member of the B3C.`,
             ratifyMsg,
-            `zeus-ratify-${head}-${Date.now()}`,
-            token
+            `zeus-ratify-${head}-${Date.now()}`
           );
           log(head, 'responded:', resp.slice(0, 150));
           await flywheelPost(`/routing_plans/${plan.id}/ratify`, { ratified_by: head });
@@ -345,18 +215,7 @@ export async function executeJob({ job_id, prompt, chat_id }) {
       return;
     }
 
-    // E4: Dispatch work packages to quorum members
-    let manifest = { members: [] };
-    try {
-      manifest = JSON.parse(fs.readFileSync('/Volumes/olympus/pool/directory/manifest.json', 'utf8'));
-    } catch (e) {
-      log('manifest read error:', e.message);
-    }
-    const memberEndpoints = Object.fromEntries(
-      manifest.members.map((m) => [m.id, m.openclaw_url ? `${m.openclaw_url}/v1/chat/completions` : null])
-    );
-
-    // E4: Dispatch ALL work packages in parallel
+    // E4: Dispatch ALL work packages in parallel (gateway.js handles node→IP+token)
     const dispatchResults = await Promise.allSettled(
       wpIds.map(async (wpId) => {
         // Read the WP to get assignee
@@ -368,38 +227,17 @@ export async function executeJob({ job_id, prompt, chat_id }) {
         }
 
         const assignee = (wp.assigned_to || wp.scope?.assigned_to || 'hermes').toLowerCase();
-        const endpoint = memberEndpoints[assignee];
         const brief = wp.scope?.brief || wp.scope?.summary || prompt;
 
         // Accept WP
         await flywheelPost(`/work_packages/${wpId}/accept`, { accepted_by: assignee });
 
-        if (!endpoint) {
-          log('no endpoint for', assignee, '— using zeus fallback');
-          const fallback = await openclawCall(
-            ZEUS_OPENCLAW,
-            'You are handling a work package for the B3C council. Keep response under 1500 characters.',
-            `Brief: ${brief}\n\nProvide a focused response.`,
-            `zeus-fallback-${assignee}-${Date.now()}`
-          );
-          await flywheelPost(`/work_packages/${wpId}/return`, {
-            returned_by: assignee,
-            payload: { raw: fallback },
-          });
-          return { assignee, result: fallback };
-        }
-
-        // Use per-node token for council heads, shared quorum token for sparks
-        const dispatchToken = TOKENS[assignee] || TOKENS.quorum;
-        log("dispatching to", assignee, "(token:", assignee in TOKENS ? "per-node" : "quorum", ")");
+        log('dispatching to', assignee);
         const result = await openclawCall(
-          endpoint,
-          "You have a work package from the B3C council. Keep response under 1500 characters.",
-          `Brief: ${brief}
-
-Return a focused, concise response.`,
-          `zeus-dispatch-${assignee}-${Date.now()}`,
-          dispatchToken
+          assignee,
+          'You have a work package from the B3C council. Keep response under 1500 characters.',
+          `Brief: ${brief}\n\nReturn a focused, concise response.`,
+          `zeus-dispatch-${assignee}-${Date.now()}`
         );
         log(assignee, 'returned:', result.slice(0, 150));
 
@@ -443,7 +281,7 @@ ${classification.zeus_assessment || prompt}`);
     ].join('\n');
 
     const synthesis = await openclawCall(
-      ZEUS_OPENCLAW,
+      'zeus',
       'You are Zeus. Deliver the final synthesis. HARD LIMIT: under 2000 characters total. Be concise.',
       synthesisPrompt,
       `zeus-synthesize-${job_id.slice(-8)}-${Date.now()}`
@@ -454,7 +292,6 @@ ${classification.zeus_assessment || prompt}`);
     // E6: Deliver
     await patchJob(job_id, { status: 'delivered' });
     await sendTelegram(chat_id, synthesis);
-    writeFinding(job_id, job.title, routingClass, synthesis);
     log('=== JOB DELIVERED ===', job_id);
 
   } catch (e) {

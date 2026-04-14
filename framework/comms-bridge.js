@@ -122,7 +122,6 @@ async function handleForge(client, projectLabel, row) {
         title: body.split('\n')[0].slice(0, 80),
         description: body,
         submitter: from_agent,
-        routing_class: 'pending_classification',
       }),
     });
 

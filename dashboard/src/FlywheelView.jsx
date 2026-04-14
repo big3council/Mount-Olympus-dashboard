@@ -48,11 +48,6 @@ const STATUS_COLORS = {
 };
 const statusColor = (s) => STATUS_COLORS[s] || '#8a9dab';
 
-const ROUTING_BADGE = {
-  trivial:   { label: 'TRIVIAL',   color: '#6ec1ff' },
-  standard:  { label: 'STANDARD',  color: '#f0c060' },
-  strategic: { label: 'STRATEGIC', color: '#c896ff' },
-};
 
 // ---------------------------------------------------------------------------
 // FlywheelView
@@ -117,10 +112,9 @@ export default function FlywheelView() {
   // Aggregate status tallies for the header strip
   const tallies = jobs.reduce((acc, j) => {
     acc.total++;
-    acc.byClass[j.routing_class] = (acc.byClass[j.routing_class] || 0) + 1;
     acc.byStatus[j.status] = (acc.byStatus[j.status] || 0) + 1;
     return acc;
-  }, { total: 0, byClass: {}, byStatus: {} });
+  }, { total: 0, byStatus: {} });
 
   const selectedJob = jobs.find((j) => j.id === selectedJobId) || selectedJobDetail;
 
@@ -140,14 +134,10 @@ export default function FlywheelView() {
             </div>
           </div>
           <div className="fw-tallies">
-            {['trivial', 'standard', 'strategic'].map((cls) => (
-              <div key={cls} className="fw-tally">
-                <div className="fw-tally-label" style={{ color: ROUTING_BADGE[cls].color }}>
-                  {ROUTING_BADGE[cls].label}
-                </div>
-                <div className="fw-tally-value">{tallies.byClass[cls] || 0}</div>
-              </div>
-            ))}
+            <div className="fw-tally">
+              <div className="fw-tally-label">DELIVERED</div>
+              <div className="fw-tally-value">{tallies.byStatus['delivered'] || 0}</div>
+            </div>
             <div className="fw-tally">
               <div className="fw-tally-label">IN PROGRESS</div>
               <div className="fw-tally-value">
@@ -172,7 +162,6 @@ export default function FlywheelView() {
               <div className="fw-empty">No jobs in the flywheel yet. Submit one via @olympusforge_bot.</div>
             )}
             {jobs.map((job) => {
-              const badge = ROUTING_BADGE[job.routing_class] || { label: job.routing_class, color: '#8a9dab' };
               return (
                 <button
                   key={job.id}
@@ -181,9 +170,6 @@ export default function FlywheelView() {
                 >
                   <div className="fw-row-top">
                     <span className="fw-row-id">{shortId(job.id)}</span>
-                    <span className="fw-row-class" style={{ color: badge.color, borderColor: badge.color }}>
-                      {badge.label}
-                    </span>
                     <span className="fw-row-status" style={{ color: statusColor(job.status) }}>
                       ● {job.status}
                     </span>
@@ -219,7 +205,6 @@ export default function FlywheelView() {
                   <div className="fw-detail-id">{selectedJobDetail.id}</div>
                 </div>
                 <div className="fw-detail-meta">
-                  <div><span className="fw-k">class</span> {selectedJobDetail.routing_class}</div>
                   <div><span className="fw-k">status</span> <span style={{ color: statusColor(selectedJobDetail.status) }}>{selectedJobDetail.status}</span></div>
                   <div><span className="fw-k">submitter</span> {selectedJobDetail.submitter}</div>
                   <div><span className="fw-k">created</span> {fmtTime(selectedJobDetail.created_at)} ({fmtAgo(selectedJobDetail.created_at)})</div>

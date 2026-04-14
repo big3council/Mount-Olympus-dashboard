@@ -1,13 +1,15 @@
 import { broadcast } from './olympus-ws.js';
 import { readFileSync } from 'fs';
-import { callZeus, callPoseidon, callHades } from './agentCalls.js';
+import { callZeus, callPoseidon, callHades, callAgent } from './gateway.js';
+import { classifyJob } from './classifier.js';
 import { observeMission } from './gaia.js';
+import { updateMission, writeFinding } from './mission-store.js';
+import { runAllQuorums } from './quorum-dispatch.js';
 
 // ── Classification ────────────────────────────────────────────────────────────
-// Delegates classification entirely to Zeus. He reads his CLASSIFY.md guide
-// (~/olympus/zeus/CLASSIFY.md) on every call — update that file to tune his
-// routing decisions over time. His response is trusted directly with no
-// override logic applied.
+// 2-tier system: T1 (Smart Solo) routes to one agent, T2 (Full Deliberative)
+// runs the full B3C council. Haiku API classifies via classifier.js.
+// Routing context at /Volumes/olympus/pool/routing/t1-routing-context.md.
 
 const CLASSIFY_MD_PATH = '/Users/zeus/olympus/zeus/CLASSIFY.md';
 
@@ -30,29 +32,28 @@ ${guide}
 
 ---
 
-Classify this message as exactly one of: TIER_1, TIER_2, or TIER_3.
+Classify this message as exactly one of: TIER_1 or TIER_2.
 Reply with only the tier label — nothing else.
 
 MESSAGE TO CLASSIFY:
 ${rawInput}`
     : `Classify the following message as exactly one of:
 TIER_1 — Simple, conversational, quick. You respond alone on behalf of the council. No deliberation needed.
-TIER_2 — Focused task or domain-specific request. All three council members contribute but deliberation is streamlined and fast.
-TIER_3 — Complex, multi-domain, high stakes, or strategic. Full B3C council with complete deliberation cycle.
-Reply with only TIER_1, TIER_2, or TIER_3.
+TIER_2 — Any task requiring council deliberation. All three council members contribute; full B3C pipeline runs.
+Reply with only TIER_1 or TIER_2.
 
 ${rawInput}`;
 
   const response = await callZeus(prompt);
 
   const raw = response.trim().toUpperCase().split(/\s+/)[0];
-  if (raw === 'TIER_1' || raw === 'TIER_2' || raw === 'TIER_3') {
+  if (raw === 'TIER_1' || raw === 'TIER_2') {
     console.log(`[CLASSIFY] '${rawInput.slice(0, 60)}' → ${raw}`);
     return raw;
   }
 
-  console.warn(`[CLASSIFY] Zeus returned unexpected response: "${response.slice(0, 80)}" — defaulting to TIER_3`);
-  return 'TIER_3';
+  console.warn(`[CLASSIFY] Zeus returned unexpected response: "${response.slice(0, 80)}" — defaulting to TIER_2`);
+  return 'TIER_2';
 }
 
 // ── Agent call helpers ────────────────────────────────────────────────────────
@@ -107,6 +108,7 @@ function deliverableContext(deliverables, failures) {
 async function runTier1(requestId, userInput, channel, userId = null) {
   const start = Date.now();
   console.log(`[B3C] Tier 1 mission ${requestId}`);
+  updateMission(requestId, { id: requestId, status: 'executing', tier: 'TIER_1', agent: 'zeus', text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
 
   broadcast({ type: 'stage_change',  id: requestId, stage: 'execution' });
   broadcast({ type: 'agent_thought', id: requestId, agent: 'zeus', text: 'Processing...' });
@@ -130,147 +132,20 @@ async function runTier1(requestId, userInput, channel, userId = null) {
     });
   } catch {}
 
+  updateMission(requestId, { status: 'delivered', elapsed, output: response.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'TIER_1', 'zeus', response);
+
   console.log(`[B3C] Tier 1 complete in ${(elapsed / 1000).toFixed(1)}s`);
   return response;
 }
 
-// ── Tier 2 — Focused three-domain execution ───────────────────────────────────
+// ── Tier 2 — Full B3C pipeline ────────────────────────────────────────────────
 async function runTier2(requestId, userInput, channel, userId = null) {
   const start = Date.now();
   console.log(`[B3C] Tier 2 mission ${requestId}`);
+  updateMission(requestId, { id: requestId, status: 'council_initial', tier: 'T2', text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
   const t2CouncilInitial = [];
   const t2CouncilBackend = [];
-
-  // ── Coordination ──────────────────────────────────────────────────────────
-  broadcast({ type: 'stage_change', id: requestId, stage: 'council_initial' });
-
-  const taskRes = await callSafe(requestId, 'zeus', 'coordination', () => callZeus(
-    `You are Zeus, coordinating the B3C Council for a focused request.
-
-USER REQUEST: ${userInput}
-
-Analyze this request and immediately assign clear domain tasks to each council member. Be direct and decisive — no extended deliberation needed. State clearly what each member should produce.
-
-Assign tasks for:
-- Zeus (Spiritual/Intellectual domain): philosophical framing, conceptual architecture, meaning, synthesis
-- Poseidon (Financial/Social domain): economic forces, market dynamics, social relationships, incentive structures
-- Hades (Physical/Technical domain): technical implementation, systems architecture, practical mechanics, execution steps`,
-    requestId
-  ));
-
-  const taskAssignment = taskRes.ok
-    ? taskRes.result
-    : 'Each member should produce a complete, substantive work product covering their primary domain.';
-
-  broadcast({ type: 'council_message', id: requestId, council: 'initial', speaker: 'zeus', text: taskAssignment, vote: 'approve' });
-  t2CouncilInitial.push({ speaker: 'zeus', text: taskAssignment, vote: 'approve' });
-  console.log('[B3C] Tier 2: Zeus assigned tasks');
-
-  // ── Parallel execution ────────────────────────────────────────────────────
-  broadcast({ type: 'stage_change',  id: requestId, stage: 'execution' });
-  broadcast({ type: 'agent_thought', id: requestId, agent: 'zeus',     text: 'Producing Spiritual/Intellectual deliverable...' });
-  broadcast({ type: 'agent_thought', id: requestId, agent: 'poseidon', text: 'Producing Financial/Social deliverable...' });
-  broadcast({ type: 'agent_thought', id: requestId, agent: 'hades',    text: 'Producing Physical/Technical deliverable...' });
-
-  const execBase = `USER REQUEST: ${userInput}\n\nCOUNCIL TASK ASSIGNMENTS:\n${taskAssignment}`;
-
-  const [zeusRes, posRes, hadRes] = await Promise.all([
-    callSafe(requestId, 'zeus', 'execution', () => callZeus(
-      `You are Zeus, executing your Spiritual/Intellectual domain work.\n\n${execBase}\n\nProduce your deliverable now. Your domain covers: philosophical framing, conceptual architecture, meaning and purpose, intellectual synthesis, the underlying "why" of this request. Deliver a complete, substantive Spiritual/Intellectual work product.`,
-      requestId
-    )),
-    callSafe(requestId, 'poseidon', 'execution', () => callPoseidon(
-      `You are Poseidon, executing your Financial/Social domain work.\n\n${execBase}\n\nProduce your deliverable now. Your domain covers: economic analysis, market forces, social dynamics, relationship networks, financial considerations, the human systems and incentive structures at play. Deliver a complete, substantive Financial/Social work product.`,
-      requestId
-    )),
-    callSafe(requestId, 'hades', 'execution', () => callHades(
-      `You are Hades, executing your Physical/Technical domain work.\n\n${execBase}\n\nProduce your deliverable now. Your domain covers: technical implementation, systems architecture, practical mechanics, infrastructure, tangible execution steps, the concrete "how it works." Deliver a complete, substantive Physical/Technical work product.`,
-      requestId
-    )),
-  ]);
-
-  const zeusWork     = zeusRes.ok ? zeusRes.result : null;
-  const poseidonWork = posRes.ok  ? posRes.result  : null;
-  const hadesWork    = hadRes.ok  ? hadRes.result  : null;
-  const failures     = [
-    !zeusWork     && 'Zeus (Spiritual/Intellectual)',
-    !poseidonWork && 'Poseidon (Financial/Social)',
-    !hadesWork    && 'Hades (Physical/Technical)',
-  ].filter(Boolean);
-
-  if (zeusWork)     broadcast({ type: 'task_assigned', id: requestId, agent: 'zeus',     task: zeusWork });
-  if (poseidonWork) broadcast({ type: 'task_assigned', id: requestId, agent: 'poseidon', task: poseidonWork });
-  if (hadesWork)    broadcast({ type: 'task_assigned', id: requestId, agent: 'hades',    task: hadesWork });
-  console.log(`[B3C] Tier 2: ${3 - failures.length}/3 deliverables complete`);
-
-  // ── Single review pass ────────────────────────────────────────────────────
-  broadcast({ type: 'stage_change', id: requestId, stage: 'council_backend' });
-
-  const reviewCtx = `USER REQUEST: ${userInput}\n\nZEUS: ${zeusWork || '[UNAVAILABLE]'}\n\nPOSEIDON: ${poseidonWork || '[UNAVAILABLE]'}\n\nHADES: ${hadesWork || '[UNAVAILABLE]'}`;
-
-  const [zeusRevRes, posRevRes, hadRevRes] = await Promise.all([
-    callSafe(requestId, 'zeus', 'review', () => callZeus(
-      `You are Zeus, doing a single-pass review of all three deliverables.\n\n${reviewCtx}\n\nAssess whether these three together fully answer the request. Be honest and direct. End your response with VOTE: AYE.`,
-      requestId
-    )),
-    callSafe(requestId, 'poseidon', 'review', () => callPoseidon(
-      `You are Poseidon, doing a single-pass review.\n\n${reviewCtx}\n\nAssess from your Financial/Social perspective whether the combined output fully answers the request. End with VOTE: AYE.`,
-      requestId
-    )),
-    callSafe(requestId, 'hades', 'review', () => callHades(
-      `You are Hades, doing a single-pass review.\n\n${reviewCtx}\n\nAssess from your Physical/Technical perspective whether the combined output fully answers the request. End with VOTE: AYE.`,
-      requestId
-    )),
-  ]);
-
-  if (zeusRevRes.ok)  { broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'zeus',     text: zeusRevRes.result,  vote: 'calling' }); t2CouncilBackend.push({ speaker: 'zeus',     text: zeusRevRes.result }); }
-  if (posRevRes.ok)   { broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'poseidon', text: posRevRes.result });  t2CouncilBackend.push({ speaker: 'poseidon', text: posRevRes.result });  }
-  if (hadRevRes.ok)   { broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'hades',    text: hadRevRes.result });   t2CouncilBackend.push({ speaker: 'hades',    text: hadRevRes.result });   }
-  broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'zeus', text: 'Tier 2 review complete. Proceeding to synthesis.', vote: 'approve' });
-
-  // ── Synthesis ─────────────────────────────────────────────────────────────
-  const synthCtx = deliverableContext({ zeus: zeusWork, poseidon: poseidonWork, hades: hadesWork }, failures);
-
-  const synthRes = await callSafe(requestId, 'zeus', 'synthesis', () => callZeus(
-    `You are Zeus. Synthesize all available domain deliverables into a single coherent, integrated final response.
-
-USER REQUEST: ${userInput}
-
-${synthCtx}
-
-Weave the available layers together seamlessly. This is the council's delivered output — make it complete and authoritative.`,
-    requestId
-  ));
-
-  const synthesis = synthRes.ok
-    ? synthRes.result
-    : zeusWork || poseidonWork || hadesWork || '⚠️ Synthesis failed — all agents unreachable.';
-
-  const t2Elapsed = Date.now() - start;
-
-  broadcast({ type: 'stage_change',    id: requestId, stage: 'done' });
-  broadcast({ type: 'request_complete', id: requestId, elapsed: t2Elapsed, output: synthesis, channel, tier: 'TIER_2', councils: 2, ...(userId != null ? { userId: String(userId) } : {}) });
-
-  // Observe
-  try {
-    observeMission({
-      id: requestId, timestamp: Date.now(), userId, channel, tier: 'TIER_2',
-      request: userInput, councilInitial: t2CouncilInitial, councilBackend: t2CouncilBackend,
-      deliverables: { zeus: zeusWork, poseidon: poseidonWork, hades: hadesWork },
-      failures, output: synthesis, elapsed: t2Elapsed,
-    });
-  } catch {}
-
-  console.log(`[B3C] Tier 2 complete in ${(t2Elapsed / 1000).toFixed(1)}s`);
-  return synthesis;
-}
-
-// ── Tier 3 — Full B3C pipeline ────────────────────────────────────────────────
-async function runTier3(requestId, userInput, channel, userId = null) {
-  const start = Date.now();
-  console.log(`[B3C] Tier 3 mission ${requestId}`);
-  const t3CouncilInitial = [];
-  const t3CouncilBackend = [];
 
   broadcast({ type: 'stage_change', id: requestId, stage: 'council_initial' });
 
@@ -290,7 +165,7 @@ Speak directly to the council. This is your opening statement — share your len
 
   const zeusFraming = zeusFrameRes.ok ? zeusFrameRes.result : '[Zeus unavailable for opening]';
   broadcast({ type: 'council_message', id: requestId, council: 'initial', speaker: 'zeus', text: zeusFraming });
-  t3CouncilInitial.push({ speaker: 'zeus', text: zeusFraming });
+  t2CouncilInitial.push({ speaker: 'zeus', text: zeusFraming });
   console.log('[B3C] Zeus framing complete');
 
   // ── Poseidon + Hades voices (parallel) ───────────────────────────────────
@@ -328,8 +203,8 @@ Do not defer to Zeus or repeat what he said. Speak from your own domain with you
 
   broadcast({ type: 'council_message', id: requestId, council: 'initial', speaker: 'poseidon', text: poseidonVoice });
   broadcast({ type: 'council_message', id: requestId, council: 'initial', speaker: 'hades',    text: hadesVoice });
-  t3CouncilInitial.push({ speaker: 'poseidon', text: poseidonVoice });
-  t3CouncilInitial.push({ speaker: 'hades',    text: hadesVoice });
+  t2CouncilInitial.push({ speaker: 'poseidon', text: poseidonVoice });
+  t2CouncilInitial.push({ speaker: 'hades',    text: hadesVoice });
   console.log('[B3C] Poseidon and Hades voiced in parallel');
 
   let councilHistory = `ZEUS:\n${zeusFraming}\n\nPOSEIDON:\n${poseidonVoice}\n\nHADES:\n${hadesVoice}`;
@@ -397,6 +272,7 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
   // ── Parallel execution ────────────────────────────────────────────────────
   broadcast({ type: 'stage_change', id: requestId, stage: 'execution' });
   console.log('[B3C] Execution phase');
+  updateMission(requestId, { status: 'executing' });
 
   broadcast({ type: 'agent_thought', id: requestId, agent: 'zeus',     text: 'Producing Spiritual/Intellectual deliverable...' });
   broadcast({ type: 'agent_thought', id: requestId, agent: 'poseidon', text: 'Producing Financial/Social deliverable...' });
@@ -433,8 +309,40 @@ If no — respond starting with VOTE: DELIBERATE and identify what needs resolvi
   if (hadesWork)    broadcast({ type: 'task_assigned', id: requestId, agent: 'hades',    task: hadesWork });
   console.log(`[B3C] ${3 - execFailures.length}/3 deliverables complete`);
 
+  // ── Quorum dispatch ─────────────────────────────────────────────────────
+  // Each head with a deliverable runs a full quorum cycle.
+  // Heads that failed run a smoke test instead.
+  let quorumContext = '';
+  try {
+    const headScopes = {
+      zeus:     zeusWork || null,
+      poseidon: poseidonWork || null,
+      hades:    hadesWork || null,
+    };
+    updateMission(requestId, { status: 'quorum_dispatch' });
+
+    const { reports, smokeTests } = await runAllQuorums(requestId, userInput, headScopes);
+
+    // Build context string for backend council
+    const reportTexts = reports
+      .filter(r => r.synthesis)
+      .map(r => `${r.head.toUpperCase()} QUORUM REPORT:\n${r.synthesis}`)
+      .join('\n\n');
+    const smokeTexts = smokeTests
+      .map(r => `${r.head.toUpperCase()} smoke: ${r.online.length}/${r.online.length + r.offline.length} online`)
+      .join(', ');
+
+    quorumContext = reportTexts ? `\n\nQUORUM REPORTS:\n${reportTexts}` : '';
+    if (smokeTexts) quorumContext += `\n\n[Smoke tests: ${smokeTexts}]`;
+
+    console.log(`[B3C] Quorum dispatch complete — ${reports.length} reports, ${smokeTests.length} smoke tests`);
+  } catch (err) {
+    console.error('[B3C] Quorum dispatch error (non-fatal):', err.message);
+  }
+
   // ── Backend council ───────────────────────────────────────────────────────
   broadcast({ type: 'stage_change', id: requestId, stage: 'council_backend' });
+  updateMission(requestId, { status: 'backend_council' });
   console.log('[B3C] Backend council');
 
   let pool = { zeus: zeusWork, poseidon: poseidonWork, hades: hadesWork };
@@ -458,8 +366,9 @@ ${pool.poseidon || '[UNAVAILABLE]'}
 
 HADES DELIVERABLE:
 ${pool.hades || '[UNAVAILABLE]'}
+${quorumContext}
 
-Read all three deliverables carefully. Assess whether together they fully answer the request. Voice your honest position to the council — what is working, what gaps exist if any.
+Read all deliverables and quorum reports carefully. Assess whether together they fully answer the request. Voice your honest position to the council — what is working, what gaps exist if any.
 
 Then cast your vote: end your response with VOTE: AYE if you believe the combined work is complete and ready, or VOTE: REVISE if something needs rework (name specifically what and by whom).`,
       requestId
@@ -467,7 +376,7 @@ Then cast your vote: end your response with VOTE: AYE if you believe the combine
 
     const zeusPosition = zeusRevRes.ok ? zeusRevRes.result : 'VOTE: AYE — proceeding to synthesis with available work.';
     broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'zeus', text: zeusPosition, vote: 'calling' });
-    t3CouncilBackend.push({ speaker: 'zeus', text: zeusPosition });
+    t2CouncilBackend.push({ speaker: 'zeus', text: zeusPosition });
 
     const [posRevRes, hadRevRes] = await Promise.all([
       callSafe(requestId, 'poseidon', 'review', () => callPoseidon(
@@ -483,11 +392,12 @@ ${pool.poseidon || '[UNAVAILABLE]'}
 
 HADES DELIVERABLE:
 ${pool.hades || '[UNAVAILABLE]'}
+${quorumContext}
 
 ZEUS'S POSITION:
 ${zeusPosition}
 
-Read all three deliverables. From your Financial/Social domain perspective, does the combined output fully answer the request? Voice your honest assessment.
+Read all deliverables and quorum reports. From your Financial/Social domain perspective, does the combined output fully answer the request? Voice your honest assessment.
 
 Then cast your vote: end your response with VOTE: AYE if the work is complete and ready, or VOTE: REVISE if something is missing (name specifically what and by whom).`,
         requestId
@@ -505,11 +415,12 @@ ${pool.poseidon || '[UNAVAILABLE]'}
 
 YOUR DELIVERABLE (Hades):
 ${pool.hades || '[UNAVAILABLE]'}
+${quorumContext}
 
 ZEUS'S POSITION:
 ${zeusPosition}
 
-Read all three deliverables. From your Physical/Technical domain perspective, does the combined output fully answer the request? Voice your honest assessment.
+Read all deliverables and quorum reports. From your Physical/Technical domain perspective, does the combined output fully answer the request? Voice your honest assessment.
 
 Then cast your vote: end your response with VOTE: AYE if the work is complete and ready, or VOTE: REVISE if something is missing (name specifically what and by whom).`,
         requestId
@@ -521,8 +432,8 @@ Then cast your vote: end your response with VOTE: AYE if the work is complete an
 
     broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'poseidon', text: poseidonPosition });
     broadcast({ type: 'council_message', id: requestId, council: 'backend', speaker: 'hades',    text: hadesPosition });
-    t3CouncilBackend.push({ speaker: 'poseidon', text: poseidonPosition });
-    t3CouncilBackend.push({ speaker: 'hades',    text: hadesPosition });
+    t2CouncilBackend.push({ speaker: 'poseidon', text: poseidonPosition });
+    t2CouncilBackend.push({ speaker: 'hades',    text: hadesPosition });
 
     const zeusAye     = zeusPosition.includes('VOTE: AYE');
     const poseidonAye = poseidonPosition.includes('VOTE: AYE');
@@ -594,43 +505,93 @@ Synthesize all available domain deliverables into a single coherent, integrated 
     broadcast({ type: "council_message", id: requestId, council: "backend", speaker: "zeus", text: "Circuit breaker: max review rounds reached. Synthesizing available work.", vote: "approve" });
   }
 
-  const t3Elapsed = Date.now() - start;
+  const t2Elapsed = Date.now() - start;
 
   broadcast({ type: 'stage_change',    id: requestId, stage: 'done' });
-  broadcast({ type: 'request_complete', id: requestId, elapsed: t3Elapsed, output: finalOutput, channel, tier: 'TIER_3', councils: 2, ...(userId != null ? { userId: String(userId) } : {}) });
+  broadcast({ type: 'request_complete', id: requestId, elapsed: t2Elapsed, output: finalOutput, channel, tier: 'TIER_2', councils: 2, ...(userId != null ? { userId: String(userId) } : {}) });
 
   // Observe
   try {
     observeMission({
-      id: requestId, timestamp: Date.now(), userId, channel, tier: 'TIER_3',
-      request: userInput, councilInitial: t3CouncilInitial, councilBackend: t3CouncilBackend,
+      id: requestId, timestamp: Date.now(), userId, channel, tier: 'TIER_2',
+      request: userInput, councilInitial: t2CouncilInitial, councilBackend: t2CouncilBackend,
       deliverables: { zeus: zeusWork, poseidon: poseidonWork, hades: hadesWork },
-      failures: execFailures, output: finalOutput, elapsed: t3Elapsed,
+      failures: execFailures, output: finalOutput, elapsed: t2Elapsed,
     });
   } catch {}
 
-  console.log(`[B3C] Tier 3 mission ${requestId} complete in ${(t3Elapsed / 1000).toFixed(1)}s`);
+  updateMission(requestId, { status: 'delivered', elapsed: t2Elapsed, output: finalOutput.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'T2', 'council', finalOutput);
+
+  console.log(`[B3C] Tier 2 mission ${requestId} complete in ${(t2Elapsed / 1000).toFixed(1)}s`);
   return finalOutput;
 }
 
+// ── T1 Smart Solo — single agent handles the request ─────────────────────────
+async function runT1Solo(requestId, userInput, channel, agent, userId = null) {
+  const start = Date.now();
+  console.log(`[B3C] T1 Smart Solo: ${agent} handling ${requestId}`);
+
+  updateMission(requestId, { id: requestId, status: 'executing', tier: 'T1', agent, text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
+
+  broadcast({ type: 'stage_change', id: requestId, stage: 'execution' });
+  broadcast({ type: 'agent_thought', id: requestId, agent, text: 'Processing...' });
+
+  const callers = { zeus: callZeus, poseidon: callPoseidon, hades: callHades };
+  const callFn = callers[agent] || callZeus;
+
+  const response = await callFn(
+    `You are ${agent.charAt(0).toUpperCase() + agent.slice(1)}. Respond directly and personally to this message.\n\n${userInput}`,
+    requestId
+  );
+
+  const elapsed = Date.now() - start;
+  broadcast({ type: 'stage_change', id: requestId, stage: 'done' });
+  broadcast({ type: 'request_complete', id: requestId, elapsed, output: response, channel, tier: 'T1', agent, ...(userId != null ? { userId: String(userId) } : {}) });
+
+  try {
+    observeMission({
+      id: requestId, timestamp: Date.now(), userId, channel, tier: 'T1',
+      request: userInput, councilInitial: [], councilBackend: [],
+      deliverables: { [agent]: response }, failures: [], output: response, elapsed,
+    });
+  } catch {}
+
+  updateMission(requestId, { status: 'delivered', elapsed, output: response.slice(0, 2000) });
+  writeFinding(requestId, userInput, 'T1', agent, response);
+
+  console.log(`[B3C] T1 Solo (${agent}) complete in ${(elapsed / 1000).toFixed(1)}s`);
+  return response;
+}
+
 // ── Public entry point ────────────────────────────────────────────────────────
-// Accepts optional preTier (from queue pre-classification) to skip re-classification.
-export async function runB3C(requestId, userInput, channel, preTier = null, userId = null) {
+// 2-tier classification: T1 (Smart Solo) or T2 (Full Deliberative).
+// Accepts optional preTier/preAgent from queue pre-classification.
+export async function runB3C(requestId, userInput, channel, preTier = null, userId = null, preAgent = null) {
   const start = Date.now();
 
   let tier = preTier;
+  let agent = preAgent;
+
   if (!tier) {
     try {
-      tier = await classifyRequest(userInput);
+      const classification = await classifyJob(userInput);
+      tier = classification.tier === 'T1' ? 'T1' : 'T2';
+      agent = classification.agent;
     } catch (err) {
-      console.error(`[B3C] Classification failed, defaulting to TIER_3:`, err.message);
-      tier = 'TIER_3';
+      console.error(`[B3C] Classification failed, defaulting to T2:`, err.message);
+      tier = 'T2';
+      agent = null;
     }
-    broadcast({ type: 'tier_classified', id: requestId, tier });
-    console.log(`[B3C] ${requestId} classified as ${tier} in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+    // Map to legacy tier names for dashboard compatibility
+    const dashTier = tier === 'T1' ? 'TIER_1' : 'TIER_2';
+    broadcast({ type: 'tier_classified', id: requestId, tier: dashTier });
+    console.log(`[B3C] ${requestId} classified as ${tier}${agent ? ' → ' + agent : ''} in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+    updateMission(requestId, { id: requestId, status: 'classified', tier, agent, text: userInput.slice(0, 500), channel, userId, created_at: new Date().toISOString() });
   }
 
-  if (tier === 'TIER_1') return runTier1(requestId, userInput, channel, userId);
-  if (tier === 'TIER_2') return runTier2(requestId, userInput, channel, userId);
-  return runTier3(requestId, userInput, channel, userId);
+  if (tier === 'T1' && agent) return runT1Solo(requestId, userInput, channel, agent, userId);
+  if (tier === 'TIER_1' || tier === 'T1') return runTier1(requestId, userInput, channel, userId);
+  // All other tiers (TIER_2, T2) run the full deliberative pipeline.
+  return runTier2(requestId, userInput, channel, userId);
 }
