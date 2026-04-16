@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, useCallback } from "react";
 import ProjectCard from "./projects/ProjectCard";
 import FlagOrb from "./projects/FlagOrb";
+import ProjectDetail from "./projects/ProjectDetail";
 
 /* ── Config ───────────────────────────────────────────────────────────── */
 const GAIA_API = "http://100.74.201.75:18781";
@@ -225,6 +226,7 @@ const styles = `
 /* ── Component ────────────────────────────────────────────────────────── */
 export default function ProjectsView() {
   const [projects, setProjects]               = useState([]);
+  const [flags, setFlags]                     = useState([]);
   const [loading, setLoading]                 = useState(true);
   const [error, setError]                     = useState(null);
   const [activeFilter, setActiveFilter]       = useState("all");
@@ -249,15 +251,31 @@ export default function ProjectsView() {
     }
   }, []);
 
+  /* Fetch open flags cluster-wide */
+  const fetchFlags = useCallback(async () => {
+    try {
+      const res = await fetch(`${GAIA_API}/flags?status=open`);
+      if (!res.ok) return;
+      const data = await res.json();
+      if (!mountedRef.current) return;
+      setFlags(Array.isArray(data?.flags) ? data.flags : []);
+    } catch {
+      /* swallow — flag cluster is additive, not load-blocking */
+    }
+  }, []);
+
   useEffect(() => {
     mountedRef.current = true;
     fetchProjects();
-    const id = setInterval(fetchProjects, POLL_MS);
+    fetchFlags();
+    const id  = setInterval(fetchProjects, POLL_MS);
+    const id2 = setInterval(fetchFlags,    POLL_MS);
     return () => {
       mountedRef.current = false;
       clearInterval(id);
+      clearInterval(id2);
     };
-  }, [fetchProjects]);
+  }, [fetchProjects, fetchFlags]);
 
   /* Derived: filtered list + proposal count */
   const filteredProjects = useMemo(() => {
@@ -279,7 +297,12 @@ export default function ProjectsView() {
           <h2 className="projects-title">Projects</h2>
           <div className="projects-header-right">
             <div className="projects-flag-cluster">
-              <FlagOrb />
+              <FlagOrb
+                flags={flags}
+                projects={projects}
+                onSelectProject={(id) => setSelectedProjectId(id)}
+                onFlagResolved={() => fetchFlags()}
+              />
             </div>
             <button
               type="button"
@@ -348,13 +371,15 @@ export default function ProjectsView() {
           />
         )}
 
-        {/* Selected project handoff — ProjectDetail lives in a separate task.
-            We expose the selection via a custom event so the parent dashboard
-            can wire the full-screen view without needing prop drilling yet. */}
+        {/* Selected project full-screen view */}
         {selectedProjectId && (
-          <SelectionBeacon
+          <ProjectDetail
             projectId={selectedProjectId}
-            onConsumed={() => setSelectedProjectId(null)}
+            onClose={() => {
+              setSelectedProjectId(null);
+              fetchProjects();
+              fetchFlags();
+            }}
           />
         )}
       </div>
@@ -454,17 +479,3 @@ function ProposeModal({ onClose, onProposed }) {
   );
 }
 
-/* ── Selection beacon ─────────────────────────────────────────────────── */
-/* Card-click selection needs to reach the full-screen ProjectDetail, which
- * is built in a separate task. Rather than hard-wire a parent handler now,
- * we emit a window-level CustomEvent so the eventual parent can listen
- * without changes here. */
-function SelectionBeacon({ projectId, onConsumed }) {
-  useEffect(() => {
-    window.dispatchEvent(
-      new CustomEvent("olympus:project-selected", { detail: { projectId } })
-    );
-    onConsumed();
-  }, [projectId, onConsumed]);
-  return null;
-}

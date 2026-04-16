@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import CouncilChamber from "./CouncilChamber";
+import ProjectsView from "./ProjectsView";
 import { FONTS, css } from "./styles";
 import {
   API_URL, WS_URL, NODE_HEALTH_TARGETS,
@@ -2267,7 +2268,7 @@ useEffect(() => {
           </div>
         )}
 
-        {topView === "projects" && <div className="projects-shell" style={{padding:32,color:"#aaa"}}>Projects loading...</div>}
+        {topView === "projects" && <ProjectsView />}
 
         {topView === "record" && (
           <div className="main-canvas" key="record">
