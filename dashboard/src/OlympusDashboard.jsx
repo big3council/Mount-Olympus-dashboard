@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import OlympusView from "./OlympusView";
 import CouncilChamber from "./CouncilChamber";
 import { FONTS, css } from "./styles";
 import {
@@ -56,7 +55,7 @@ export default function OlympusDashboard() {
   const gaiaChatRef      = useRef(null);
 
   // ── Top-level view state ──────────────────────────────────────────────────
-  const [topView, setTopView]               = useState("council"); // "council" | "olympus" | "record"
+  const [topView, setTopView]               = useState("council"); // "council" | "projects" | "record"
   const [nodeHealthOpen, setNodeHealthOpen] = useState(false);
   const nodeHealthRef = useRef(null);
 
@@ -2186,7 +2185,7 @@ useEffect(() => {
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
             {/* Top-mode toggle */}
             <div className="top-toggle">
-              {["council", "olympus", "record"].map(v => (
+              {["council", "projects", "record"].map(v => (
                 <button
                   key={v}
                   className={`top-toggle-btn ${topView === v ? "active" : ""}`}
@@ -2268,7 +2267,7 @@ useEffect(() => {
           </div>
         )}
 
-        {topView === "olympus" && <OlympusView />}
+        {topView === "projects" && <div className="projects-shell" style={{padding:32,color:"#aaa"}}>Projects loading...</div>}
 
         {topView === "record" && (
           <div className="main-canvas" key="record">
