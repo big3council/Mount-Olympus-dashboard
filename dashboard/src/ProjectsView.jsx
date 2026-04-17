@@ -9,7 +9,7 @@ const POLL_MS  = 30_000;
 
 /* ── Filter definitions ───────────────────────────────────────────────── */
 const FILTERS = [
-  { key: "all",       label: "All",       match: () => true },
+  { key: "all",       label: "All",       match: (p) => p.status !== "paused" && p.status !== "dismissed" },
   { key: "active",    label: "Active",    match: (p) => p.status === "active"   },
   { key: "blocked",   label: "Blocked",   match: (p) => p.status === "blocked"  },
   { key: "proposals", label: "Proposals", match: (p) => p.status === "proposal" || p.status === "draft" },
