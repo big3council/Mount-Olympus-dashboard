@@ -12,6 +12,7 @@ const FILTERS = [
   { key: "all",       label: "All",       match: (p) => p.status !== "paused" && p.status !== "dismissed" },
   { key: "active",    label: "Active",    match: (p) => p.status === "active"   },
   { key: "blocked",   label: "Blocked",   match: (p) => p.status === "blocked"  },
+  { key: "paused",    label: "Paused",    match: (p) => p.status === "paused"    },
   { key: "proposals", label: "Proposals", match: (p) => p.status === "proposal" || p.status === "draft" },
   { key: "complete",  label: "Complete",  match: (p) => p.status === "complete" },
 ];
@@ -352,6 +353,7 @@ export default function ProjectsView() {
               key={p.id}
               project={p}
               onSelect={setSelectedProjectId}
+              onMutate={fetchProjects}
             />
           ))}
         </div>
