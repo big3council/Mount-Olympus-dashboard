@@ -393,14 +393,16 @@ function ProposeModal({ onClose, onProposed }) {
   const [goal, setGoal]         = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [errMsg, setErrMsg]     = useState(null);
-  const titleRef = useRef(null);
+  const titleRef    = useRef(null);
+  const onCloseRef  = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     titleRef.current?.focus();
-    const onKey = (e) => { if (e.key === "Escape") onClose(); };
+    const onKey = (e) => { if (e.key === "Escape") onCloseRef.current?.(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, []);
 
   const canSubmit = title.trim().length > 0 && !submitting;
 
