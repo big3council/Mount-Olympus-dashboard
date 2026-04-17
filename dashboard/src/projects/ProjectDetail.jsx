@@ -734,7 +734,7 @@ export default function ProjectDetail({ projectId, onClose }) {
                 ✓ Mark Complete
               </button>
             )}
-            {project && project.status !== "paused" && project.status !== "complete" && (
+            {project && project.status !== "paused" && (
               <button
                 type="button"
                 className="pd-btn-archive"
