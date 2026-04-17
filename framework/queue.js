@@ -241,6 +241,10 @@ function startMission(mission) {
         output:  `⚠️ Mission failed: ${err.message}`,
         channel,
         error:   true,
+        // Include userId so the Telegram reply path can route the failure
+        // notice back to the originating chat. Without this the reply logs
+        // chatId=null and falls into the plain-text fallback that ETELEGRAMs.
+        ...(userId != null ? { userId: String(userId) } : {}),
       });
       releaseSlot(id);
     }
