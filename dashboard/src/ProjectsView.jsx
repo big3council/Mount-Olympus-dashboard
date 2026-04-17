@@ -307,7 +307,7 @@ export default function ProjectsView() {
             <button
               type="button"
               className="projects-add-btn"
-              title="Propose new project"
+              title="Create new project"
               onClick={() => setModalOpen(true)}
             >
               +
@@ -343,7 +343,7 @@ export default function ProjectsView() {
           {!loading && filteredProjects.length === 0 && !error && (
             <div className="projects-empty">
               {activeFilter === "all"
-                ? "No projects yet. Press + to propose one."
+                ? "No projects yet. Press + to create one."
                 : `No ${activeFilter} projects.`}
             </div>
           )}
@@ -402,23 +402,28 @@ function ProposeModal({ onClose, onProposed }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  const canSubmit = title.trim().length > 0 && goal.trim().length > 0 && !submitting;
+  const canSubmit = title.trim().length > 0 && !submitting;
 
   const submit = async () => {
     if (!canSubmit) return;
     setSubmitting(true);
     setErrMsg(null);
     try {
-      const res = await fetch(`${GAIA_API}/projects/propose`, {
+      const res = await fetch(`${GAIA_API}/projects`, {
         method:  "POST",
         headers: { "Content-Type": "application/json" },
-        body:    JSON.stringify({ title: title.trim(), goal: goal.trim() }),
+        body:    JSON.stringify({
+          title: title.trim(),
+          goal: goal.trim() || null,
+          created_by: "carson",
+          status: "active",
+        }),
       });
       if (!res.ok) throw new Error(`Gaia ${res.status}`);
       const data = await res.json();
       onProposed(data?.project || null);
     } catch (err) {
-      setErrMsg(err.message || "Propose failed");
+      setErrMsg(err.message || "Create failed");
       setSubmitting(false);
     }
   };
@@ -429,7 +434,7 @@ function ProposeModal({ onClose, onProposed }) {
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <div className="projects-modal" role="dialog" aria-modal="true">
-        <h3 className="projects-modal-title">Propose project</h3>
+        <h3 className="projects-modal-title">Create project</h3>
 
         <div className="projects-modal-field">
           <label className="projects-modal-label">Title</label>
@@ -445,7 +450,7 @@ function ProposeModal({ onClose, onProposed }) {
         </div>
 
         <div className="projects-modal-field">
-          <label className="projects-modal-label">Goal</label>
+          <label className="projects-modal-label">Goal (optional)</label>
           <textarea
             className="projects-modal-textarea"
             value={goal}
@@ -471,7 +476,7 @@ function ProposeModal({ onClose, onProposed }) {
             onClick={submit}
             disabled={!canSubmit}
           >
-            {submitting ? "Proposing…" : "Propose"}
+            {submitting ? "Creating…" : "Create"}
           </button>
         </div>
       </div>

@@ -33,6 +33,7 @@ const STATUS_COLORS = {
   draft:     "#6b7280",
   proposal:  "#60a5fa",
   complete:  "#475569",
+  paused:    "#6b7280",
   dismissed: "#3a3a3a",
 };
 
@@ -246,8 +247,13 @@ const styles = `
     font-weight: 500;
   }
 
-  .pd-flywheel {
+  .pd-topbar-actions {
     margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pd-flywheel {
     background: transparent;
     border: 1px solid #3a2d08;
     color: #c8960a;
@@ -264,6 +270,43 @@ const styles = `
   .pd-flywheel:hover {
     background: rgba(200,150,10,0.08);
     border-color: #c8960a;
+  }
+  .pd-btn-complete {
+    background: rgba(74,222,128,0.06);
+    border: 1px solid rgba(74,222,128,0.35);
+    color: #4ade80;
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+  .pd-btn-complete:hover {
+    background: rgba(74,222,128,0.14);
+    border-color: rgba(74,222,128,0.7);
+  }
+  .pd-btn-archive {
+    background: transparent;
+    border: 1px solid #2a3560;
+    color: #8b93b7;
+    padding: 8px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: "JetBrains Mono", monospace;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .pd-btn-archive:hover {
+    background: rgba(139,147,183,0.06);
+    border-color: #4a5580;
+    color: #d8dcef;
   }
 
   /* ── Proposal banner ─────────────────────────────────────────────── */
@@ -573,6 +616,16 @@ export default function ProjectDetail({ projectId, onClose }) {
   const handleActivate = () => patchProject({ status: "active" }, "Activate");
   const handleDismiss  = () => patchProject({ status: "dismissed" }, "Dismiss");
 
+  const handleMarkComplete = async () => {
+    if (!window.confirm("Mark this project as complete?")) return;
+    await patchProject({ status: "complete" }, "Mark complete");
+  };
+
+  const handleArchive = async () => {
+    const ok = await patchProject({ status: "paused" }, "Archive");
+    if (ok) onClose?.();
+  };
+
   const handleSaveGoal = async () => {
     setEditingGoal(false);
     if (!data?.project) return;
@@ -670,14 +723,36 @@ export default function ProjectDetail({ projectId, onClose }) {
             </div>
           </div>
 
-          <button
-            type="button"
-            className="pd-flywheel"
-            onClick={handleCreateFlywheel}
-            title="Spawn a flywheel job scoped to this project"
-          >
-            + Flywheel Job
-          </button>
+          <div className="pd-topbar-actions">
+            {project && project.status !== "complete" && (
+              <button
+                type="button"
+                className="pd-btn-complete"
+                onClick={handleMarkComplete}
+                title="Mark this project as complete"
+              >
+                ✓ Mark Complete
+              </button>
+            )}
+            {project && project.status !== "paused" && project.status !== "complete" && (
+              <button
+                type="button"
+                className="pd-btn-archive"
+                onClick={handleArchive}
+                title="Archive (pause) this project"
+              >
+                ▭ Archive
+              </button>
+            )}
+            <button
+              type="button"
+              className="pd-flywheel"
+              onClick={handleCreateFlywheel}
+              title="Spawn a flywheel job scoped to this project"
+            >
+              + Flywheel Job
+            </button>
+          </div>
         </div>
 
         {/* ── Proposal banner ─────────────────────────────────────── */}
