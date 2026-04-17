@@ -1,4 +1,6 @@
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+
+const GAIA_API = "http://100.74.201.75:18781";
 
 /* ── Status palette (spec-locked) ──────────────────────────────────────── */
 const STATUS_COLORS = {
@@ -127,15 +129,53 @@ const styles = `
     background: rgba(200, 150, 10, 0.08);
     border-color: #c8960a;
   }
+
+  .proj-card-prop-actions {
+    display: flex; gap: 6px;
+  }
+  .proj-card-btn-approve,
+  .proj-card-btn-deny {
+    font-family: "JetBrains Mono", monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    background: transparent;
+    border-radius: 3px;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+  }
+  .proj-card-btn-approve {
+    color: #4ade80;
+    border: 1px solid rgba(74,222,128,0.4);
+  }
+  .proj-card-btn-approve:hover {
+    background: rgba(74,222,128,0.12);
+    border-color: rgba(74,222,128,0.75);
+  }
+  .proj-card-btn-deny {
+    color: #d99090;
+    border: 1px solid rgba(176,74,74,0.4);
+  }
+  .proj-card-btn-deny:hover {
+    background: rgba(176,74,74,0.12);
+    border-color: rgba(220,80,80,0.7);
+    color: #ec7373;
+  }
+  .proj-card-btn-approve[disabled],
+  .proj-card-btn-deny[disabled] { opacity: 0.5; cursor: wait; }
 `;
 
 /* ── Component ────────────────────────────────────────────────────────── */
-export default function ProjectCard({ project, onSelect }) {
+export default function ProjectCard({ project, onSelect, onMutate }) {
   const color = STATUS_COLORS[project.status] || STATUS_COLORS.draft;
   const agentInitial = useMemo(() => {
     if (!project.lead_agent) return "";
     return project.lead_agent.trim().charAt(0).toUpperCase();
   }, [project.lead_agent]);
+
+  const isProposal = project.status === "proposal" || project.status === "draft";
+  const [busy, setBusy] = useState(false);
 
   const handleCardClick = () => {
     if (typeof onSelect === "function") onSelect(project.id);
@@ -146,6 +186,34 @@ export default function ProjectCard({ project, onSelect }) {
     // Flywheel wiring lives in a separate task — stub for now.
     // eslint-disable-next-line no-console
     console.log("[ProjectCard] Create Flywheel Job:", project.id, project.title);
+  };
+
+  const handleApprove = async (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${GAIA_API}/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "active" }),
+      });
+      if (res.ok) onMutate?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDeny = async (e) => {
+    e.stopPropagation();
+    if (busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch(`${GAIA_API}/projects/${project.id}`, { method: "DELETE" });
+      if (res.ok) onMutate?.();
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -180,13 +248,36 @@ export default function ProjectCard({ project, onSelect }) {
           <span className="proj-card-time">
             {relTime(project.truth_state_updated_at || project.updated_at)}
           </span>
-          <button
-            type="button"
-            className="proj-card-flywheel"
-            onClick={handleFlywheel}
-          >
-            Create Flywheel Job
-          </button>
+          {isProposal ? (
+            <div className="proj-card-prop-actions">
+              <button
+                type="button"
+                className="proj-card-btn-approve"
+                onClick={handleApprove}
+                disabled={busy}
+                title="Approve — move to active"
+              >
+                Approve
+              </button>
+              <button
+                type="button"
+                className="proj-card-btn-deny"
+                onClick={handleDeny}
+                disabled={busy}
+                title="Deny — remove proposal"
+              >
+                Deny
+              </button>
+            </div>
+          ) : (
+            <button
+              type="button"
+              className="proj-card-flywheel"
+              onClick={handleFlywheel}
+            >
+              Create Flywheel Job
+            </button>
+          )}
         </div>
       </div>
     </>

@@ -762,10 +762,10 @@ export default function ProjectDetail({ projectId, onClose }) {
               Proposed by <strong>{project.proposed_by || "unknown"}</strong>. Activate or dismiss.
             </div>
             <button type="button" className="pd-btn-activate" onClick={handleActivate}>
-              Activate
+              Approve
             </button>
             <button type="button" className="pd-btn-dismiss" onClick={handleDismiss}>
-              Dismiss
+              Deny
             </button>
           </div>
         )}
