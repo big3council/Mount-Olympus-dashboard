@@ -21,7 +21,7 @@ import { initPeerLayer, getPeerStatus, getPresence } from "./council-peer.js";
 import dashboardRoutes from "./dashboard-routes.js";
 import logoRoute from "./agent-logo-route.js";
 import flywheelRouter from "./flywheel/flywheel.js";
-import { initCommsBridge } from "./comms-bridge.js";
+import { initCommsBridge, writeToComms } from "./comms-bridge.js";
 
 const PORT = 18780;
 
@@ -157,6 +157,22 @@ app.get("/peer-presence", (req, res) => {
 
 app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'olympus-framework', ts: Date.now() });
+});
+
+// ── MO Projects → mo_comms bridge ─────────────────────────────────────────
+// Thin proxy so the Gaia mo-projects-api can log to mo_comms without
+// touching Supabase directly. Payload: { channel, body, project?='carson' }.
+app.post('/mo/comms/log', async (req, res) => {
+  const { channel, body, project } = req.body || {};
+  if (!channel || !body) return res.status(400).json({ error: 'channel and body required' });
+  try {
+    const id = await writeToComms(project || 'carson', channel, body);
+    if (!id) return res.status(502).json({ error: 'writeToComms returned no id' });
+    res.json({ ok: true, comms_id: id });
+  } catch (err) {
+    console.error('[mo/comms/log] error:', err.message);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 
